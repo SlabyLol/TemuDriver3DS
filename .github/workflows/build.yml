@@ -11,60 +11,33 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python for banner
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Build 3D banner CGFX from van.obj
-        run: |
-          pip install numpy gltflib pillow -q
-          mkdir -p meta
-          if [ -f assets/cars/van.obj ]; then
-            python3 scripts/obj_to_glb.py assets/cars/van.obj meta/van_banner.glb
-            git clone --depth 1 https://github.com/skyfloogle/pycgfx.git /tmp/pycgfx
-            pip install -r /tmp/pycgfx/requirements.txt -q || true
-            (cd /tmp/pycgfx && python3 main.py $GITHUB_WORKSPACE/meta/van_banner.glb) || true
-            # pycgfx writes next to glb or in cwd
-            find /tmp /home -name 'van_banner.cgfx' 2>/dev/null | head -5
-            cp meta/van_banner.cgfx meta/banner.cgfx 2>/dev/null || \
-              cp /tmp/pycgfx/van_banner.cgfx meta/banner.cgfx 2>/dev/null || \
-              find . -name '*.cgfx' -exec cp {} meta/banner.cgfx \; 2>/dev/null || true
-            ls -la meta/
-          fi
-
       - name: Build 3DSX + CIA
-        uses: docker://devkitpro/devkitarm:latest
-        with:
-          args: >-
-            bash -c "
-              export DEVKITPRO=/opt/devkitpro;
-              export DEVKITARM=/opt/devkitpro/devkitARM;
-              export PATH=\$DEVKITARM/bin:\$DEVKITPRO/tools/bin:\$PATH;
-              mkdir -p romfs/gfx romfs/sfx romfs/cars;
-              cp assets/cars/*.obj romfs/cars/ 2>/dev/null || true;
-              cp assets/cars/*.mtl romfs/cars/ 2>/dev/null || true;
-              cp assets/cars/*.png romfs/cars/ 2>/dev/null || true;
-              make -j\$(nproc) || true;
-              ls -la;
-              if command -v makerom >/dev/null && [ -f TemuDriver3DS.elf ]; then
-                arm-none-eabi-strip TemuDriver3DS.elf 2>/dev/null || true;
-                BANNER_ARG='';
-                if command -v bannertool >/dev/null; then
-                  python3 -c 'import wave; w=wave.open(\"meta/banner.wav\",\"w\"); w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100); w.writeframes(b\"\\x00\"*44100*2*2); w.close()' 2>/dev/null || true;
-                  if [ -f meta/banner.cgfx ]; then
-                    bannertool makebanner -ci meta/banner.cgfx -a meta/banner.wav -o meta/banner.bin && BANNER_ARG='-banner meta/banner.bin' || true;
-                  fi;
-                fi;
-                makerom -f cia -o TemuDriver3DS.cia -elf TemuDriver3DS.elf -rsf meta/cia.rsf -icon TemuDriver3DS.smdh \$BANNER_ARG -exefslogo -target t 2>/dev/null ||
-                makerom -f cia -o TemuDriver3DS.cia -elf TemuDriver3DS.elf -target t 2>/dev/null || true;
-                ls -la *.cia 2>/dev/null || true;
-              fi
-            "
+        run: |
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          export PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:$PATH
+          mkdir -p romfs/gfx romfs/sfx romfs/cars meta
+          if [ -d assets/cars ]; then
+            cp assets/cars/*.obj romfs/cars/ 2>/dev/null || true
+            cp assets/cars/*.mtl romfs/cars/ 2>/dev/null || true
+            cp assets/cars/*.png romfs/cars/ 2>/dev/null || true
+          fi
+          make -j4
+          ls -la
+          if command -v makerom >/dev/null 2>&1 && [ -f TemuDriver3DS.elf ]; then
+            arm-none-eabi-strip TemuDriver3DS.elf 2>/dev/null || true
+            makerom -f cia -o TemuDriver3DS.cia -elf TemuDriver3DS.elf \
+              -rsf meta/cia.rsf -icon TemuDriver3DS.smdh \
+              -exefslogo -target t 2>/dev/null || \
+            makerom -f cia -o TemuDriver3DS.cia -elf TemuDriver3DS.elf -target t 2>/dev/null || true
+            ls -la *.cia 2>/dev/null || echo "CIA optional"
+          fi
 
       - name: Upload
         uses: actions/upload-artifact@v4
@@ -75,7 +48,6 @@ jobs:
             TemuDriver3DS.smdh
             TemuDriver3DS.cia
             TemuDriver3DS.elf
-            meta/banner.cgfx
 
       - name: Release
         if: github.ref == 'refs/heads/main'
@@ -87,7 +59,9 @@ jobs:
             TemuDriver3DS.3dsx
             TemuDriver3DS.cia
           body: |
-            3D banner from van.obj (CGFX via pycgfx)
-            Garage 3D cars + CIA
+            Build fixed
+            - 3DSX + CIA
+            - 3D garage cars (van, coupe, ...)
+            - 3D banner CGFX can be added later via bannertool locally
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
