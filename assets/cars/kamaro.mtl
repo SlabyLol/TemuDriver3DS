@@ -1,0 +1,42 @@
+# Blender 5.1.2 MTL File: 'lowpoly_cars_EXPORT.blend'
+# www.blender.org
+
+newmtl glass
+Ns 934.139832
+Ka 0.709220 0.709220 0.709220
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd C:/Users/Usuario/Objetos 3D/3D - 2D/Assets/texture-palette.png
+
+newmtl light
+Ns 360.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+
+newmtl metallic
+Ns 765.465210
+Ka 0.458177 0.458177 0.458177
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd C:/Users/Usuario/Objetos 3D/3D - 2D/Assets/texture-palette.png
+
+newmtl texture
+Ns 203.409531
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd C:/Users/Usuario/Objetos 3D/3D - 2D/Assets/texture-palette.png
