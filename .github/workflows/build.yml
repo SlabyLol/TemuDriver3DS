@@ -21,25 +21,17 @@ jobs:
         mkdir -p resources
         apt-get update -qq && apt-get install -y -qq imagemagick 2>/dev/null || true
         if [ ! -f resources/banner.png ]; then
-          convert -size 256x128 xc:'#c1121f' -fill white -gravity center -pointsize 24 -annotate 0 'TEMU DRIVER' resources/banner.png 2>/dev/null || \
-          python3 -c "
-# fallback minimal: write a tiny valid PNG later via make skip
-open('resources/banner.png','wb').write(bytes.fromhex(
-'89504e470d0a1a0a0000000d4948445200000100000000800802000000318d3f2e0000000c4944415478da6360000002000100ffff03000006000557bf0d0000000049454e44ae426082'))
-" 2>/dev/null || true
+          convert -size 256x128 xc:'#c1121f' -fill white -gravity center -pointsize 24 -annotate 0 'TEMU DRIVER' resources/banner.png || true
         fi
         if [ ! -f resources/icon.png ]; then
-          if [ -f logo.png ]; then cp logo.png resources/icon.png
-          else convert -size 48x48 xc:'#c1121f' resources/icon.png 2>/dev/null || cp resources/banner.png resources/icon.png 2>/dev/null || true
+          if [ -f logo.png ]; then
+            cp logo.png resources/icon.png
+          else
+            convert -size 48x48 xc:'#c1121f' resources/icon.png || true
           fi
         fi
         if [ ! -f resources/banner.wav ]; then
-          python3 -c "
-import wave
-with wave.open('resources/banner.wav','w') as w:
-    w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100)
-    w.writeframes(b'\\x00'*(44100*2*2))
-"
+          python3 -c "import wave; w=wave.open('resources/banner.wav','w'); w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100); w.writeframes(b'\\x00'*(44100*2*2)); w.close()"
         fi
         ls -la resources/
 
@@ -72,10 +64,10 @@ with wave.open('resources/banner.wav','w') as w:
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-          name: TemuDriver3DS
-          path: |
-            ./*.cia
-            ./*.3dsx
+        name: TemuDriver3DS
+        path: |
+          ./*.cia
+          ./*.3dsx
 
     - name: Create/update GitHub Release
       if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
