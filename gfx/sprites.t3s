@@ -1,0 +1,16 @@
+--atlas -f rgba8888 -z auto
+player_car.png
+car_blue.png
+car_green.png
+car_yellow.png
+car_purple.png
+road.png
+smoke.png
+package.png
+coin.png
+arrow.png
+button.png
+speedline.png
+crash.png
+logo.png
+bg.png
