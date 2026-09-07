@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Temu Chat Test</title></head>
+<body>
+<h1>TemuDriver Chat API test</h1>
+<p>Set WORKER_URL in the script.</p>
+<input id="user" placeholder="username" />
+<input id="pass" type="password" placeholder="password" />
+<button onclick="reg()">Register</button>
+<button onclick="login()">Login</button>
+<br/><br/>
+<input id="text" placeholder="message" size="40" />
+<button onclick="send()">Send</button>
+<button onclick="load()">Load messages</button>
+<pre id="out"></pre>
+<script>
+const WORKER_URL = "https://temu-driver-chat.YOUR_SUBDOMAIN.workers.dev";
+let token = localStorage.getItem("temu_token") || "";
+const out = (x) => document.getElementById("out").textContent = typeof x === "string" ? x : JSON.stringify(x, null, 2);
+async function reg() {
+  const r = await fetch(WORKER_URL + "/register", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: user.value, password: pass.value })
+  });
+  const j = await r.json(); if (j.token) { token = j.token; localStorage.setItem("temu_token", token); }
+  out(j);
+}
+async function login() {
+  const r = await fetch(WORKER_URL + "/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: user.value, password: pass.value })
+  });
+  const j = await r.json(); if (j.token) { token = j.token; localStorage.setItem("temu_token", token); }
+  out(j);
+}
+async function send() {
+  const r = await fetch(WORKER_URL + "/message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ text: text.value })
+  });
+  out(await r.json());
+}
+async function load() {
+  const r = await fetch(WORKER_URL + "/messages", {
+    headers: { Authorization: "Bearer " + token }
+  });
+  out(await r.json());
+}
+</script>
+</body>
+</html>
