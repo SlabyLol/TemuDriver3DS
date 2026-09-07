@@ -21,8 +21,14 @@ jobs:
         run: |
           export DEVKITPRO=/opt/devkitpro
           export DEVKITARM=/opt/devkitpro/devkitARM
-          export PATH=$DEVKITARM/bin:$PATH
-          mkdir -p romfs/gfx romfs/sfx
+          export PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:$PATH
+          mkdir -p romfs/gfx romfs/sfx romfs/cars
+          if [ -d assets/cars ]; then
+            cp assets/cars/*.obj romfs/cars/ 2>/dev/null || true
+            cp assets/cars/*.mtl romfs/cars/ 2>/dev/null || true
+            cp assets/cars/*.png romfs/cars/ 2>/dev/null || true
+          fi
+          ls -la romfs/cars/ || true
           if command -v tex3ds >/dev/null; then
             tex3ds -i gfx/sprites.t3s -o romfs/gfx/sprites.t3x || true
           fi
@@ -42,15 +48,14 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.3.${{ github.run_number }}
-          name: TemuDriver3DS v1.3.${{ github.run_number }}
+          tag_name: v3.0.${{ github.run_number }}
+          name: TemuDriver3DS v3.0.${{ github.run_number }} - 3D Cars
           files: TemuDriver3DS.3dsx
           body: |
-            Pure citro2d Temu Driver
-            - Top screen: driving
-            - Bottom: steering wheel + pedal + bars
-            - A/R = Pedal (boost)
-            - Y/B/L = Drift
-            - Circle Pad = Steer
+            **3D Car Garage**
+            - Real OBJ models (Cosmo Low Poly Cars)
+            - Garage: LEFT/RIGHT switch cars, Circle Pad rotate
+            - Driving still perspective 2D for now
+            - Text labels everywhere
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
