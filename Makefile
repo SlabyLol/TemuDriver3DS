@@ -18,6 +18,7 @@ INCLUDES	:=	include
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 ROMFS		:=	romfs
+ICON		:=	resources/icon.png
 
 APP_TITLE	:=	TemuDriver3DS
 APP_DESCRIPTION	:=	Temu Delivery Driver
@@ -88,20 +89,6 @@ export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
 export _3DSXDEPS	:=	$(if $(NO_SMDH),,$(OUTPUT).smdh)
 
-ifeq ($(strip $(ICON)),)
-	icons := $(wildcard *.png)
-	ifneq (,$(findstring $(TARGET).png,$(icons)))
-		export ICON := $(TARGET).png
-	else
-		ifneq (,$(findstring icon.png,$(icons)))
-			export ICON := icon.png
-		endif
-		ifneq (,$(findstring logo.png,$(icons)))
-			export ICON := logo.png
-		endif
-	endif
-endif
-
 ifeq ($(strip $(NO_SMDH)),)
 	export _3DSXFLAGS += --smdh=$(CURDIR)/$(TARGET).smdh
 endif
@@ -110,16 +97,33 @@ ifneq ($(ROMFS),)
 	export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: all clean cia
+.PHONY: all clean 3dsx cia
 
 #---------------------------------------------------------------------------------
-all: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS)/gfx
+all: 3dsx
+
+3dsx: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS)/gfx
 	@mkdir -p $(ROMFS)/gfx $(ROMFS)/cars $(ROMFS)/sfx
 	@if [ -d assets/cars ]; then cp -f assets/cars/*.obj $(ROMFS)/cars/ 2>/dev/null || true; fi
 	@if [ -d assets/cars ]; then cp -f assets/cars/*.png $(ROMFS)/cars/ 2>/dev/null || true; fi
 	@if [ -f $(GRAPHICS)/sprites.t3s ]; then tex3ds -i $(GRAPHICS)/sprites.t3s -o $(ROMFS)/gfx/sprites.t3x 2>/dev/null || true; fi
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
-	@$(MAKE) --no-print-directory cia
+	@echo "Built $(TARGET).3dsx"
+
+cia: 3dsx
+	@echo "Building $(TARGET).cia..."
+	@test -f resources/banner.png || (echo "ERROR: resources/banner.png missing"; exit 1)
+	@test -f resources/banner.wav || (echo "ERROR: resources/banner.wav missing"; exit 1)
+	@test -f resources/icon.png || (echo "ERROR: resources/icon.png missing"; exit 1)
+	@bannertool makesmdh -s "$(APP_TITLE)" -l "$(APP_DESCRIPTION)" -p "$(APP_AUTHOR)" -i resources/icon.png -o icon.smdh
+	@bannertool makebanner -i resources/banner.png -a resources/banner.wav -o banner.bin
+	@cp $(OUTPUT).elf $(TARGET)_cia.elf
+	@arm-none-eabi-strip $(TARGET)_cia.elf
+	@makerom -f cia -o $(TARGET).cia -rsf app.rsf -target t -exefslogo \
+		-elf $(TARGET)_cia.elf -icon icon.smdh -banner banner.bin -desc app:4
+	@rm -f icon.smdh banner.bin $(TARGET)_cia.elf
+	@echo "CIA: $(TARGET).cia"
+	@ls -la $(TARGET).cia
 
 $(BUILD):
 	@mkdir -p $@
@@ -134,27 +138,10 @@ $(ROMFS)/gfx:
 	@mkdir -p $@
 
 #---------------------------------------------------------------------------------
-cia: $(OUTPUT).elf
-	@echo "Building CIA..."
-	@arm-none-eabi-strip $(OUTPUT).elf 2>/dev/null || true
-	@if command -v makerom >/dev/null 2>&1; then \
-		if [ -f meta/cia.rsf ]; then \
-			makerom -f cia -o $(OUTPUT).cia -elf $(OUTPUT).elf \
-				-rsf meta/cia.rsf -icon $(OUTPUT).smdh \
-				-exefslogo -target t && echo "CIA: $(OUTPUT).cia" || \
-			makerom -f cia -o $(OUTPUT).cia -elf $(OUTPUT).elf -target t && echo "CIA (simple): $(OUTPUT).cia" || \
-			echo "CIA build failed"; \
-		else \
-			makerom -f cia -o $(OUTPUT).cia -elf $(OUTPUT).elf -target t && echo "CIA: $(OUTPUT).cia" || echo "CIA failed"; \
-		fi; \
-	else \
-		echo "makerom not found - skip CIA"; \
-	fi
-
-#---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(TARGET).cia $(ROMFS)/gfx/sprites.t3x
+	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(TARGET).cia \
+		icon.smdh banner.bin $(TARGET)_cia.elf $(ROMFS)/gfx/sprites.t3x
 
 #---------------------------------------------------------------------------------
 else
