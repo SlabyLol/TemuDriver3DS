@@ -1,0 +1,71 @@
+BasicInfo:
+  Title                   : TemuDriver3DS
+  CompanyCode             : "00"
+  ProductCode             : TEMU-DRIVER
+  ContentType             : Application
+  Logo                    : Homebrew
+
+TitleInfo:
+  UniqueId                : 0xFF3D1
+  Category                : Application
+
+Option:
+  UseOnSD                 : True
+  FreeProductCode         : True
+  MediaFootPadding        : True
+
+SystemControlInfo:
+  SaveDataSize            : 0KB
+  RemasterVersion         : 0
+  StackSize               : 0x40000
+
+AccessControlInfo:
+  CoreVersion             : 2
+  UseExtSaveData          : False
+  MemoryType              : Application
+  SystemMode              : 64MB
+
+  IdealProcessor          : 0
+  AffinityMask            : 1
+  Priority                : 16
+  MaxCpu                  : 0x9E
+  DisableDebug            : False
+  EnableForceDebug        : False
+
+  ServiceAccessControl:
+    - APT:U
+    - ncd:s
+    - AC:U
+    - soc:U
+    - SSL:C
+    - http:C
+    - dns:u
+    - am:u
+    - boss:U
+    - cfg:u
+    - fs:USER
+    - gsp::Gpu
+    - hid:USER
+    - ir:USER
+    - ndm:u
+    - news:u
+    - ptm:u
+    - ldn:u
+    - ldr:ro
+    - ps:ps
+    - dsp::DSP
+    - y2r:u
+    - cam:u
+    - nwm::UDS
+    - mic:u
+    - act:u
+    - nfc:u
+    - cdc:HID
+    - am:sys
+    - am:u
+    - am:net
+    - csnd:SND
+    - ir:rst
+    - i2c::MCU
+    - mcu::HWC
+    - ns:s

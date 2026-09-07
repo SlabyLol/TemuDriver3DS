@@ -2,76 +2,90 @@ name: Build TemuDriver3DS
 
 on:
   push:
-    branches: [ main ]
+  pull_request:
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     container:
-      image: devkitpro/devkitarm:latest
-
+      image: devkitpro/devkitarm
     steps:
-      - uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v4
 
-      - name: Build 3DSX
-        run: |
-          export DEVKITPRO=/opt/devkitpro
-          export DEVKITARM=/opt/devkitpro/devkitARM
-          export PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:$PATH
-          make -j4
-          ls -la TemuDriver3DS.* || true
-
-      - name: Build CIA with makerom
-        run: |
-          set -x
-          if [ ! -f TemuDriver3DS.elf ]; then
-            echo "No ELF - skip CIA"
-            exit 0
+    - name: Ensure banner resources
+      run: |
+        mkdir -p resources
+        apt-get update -qq && apt-get install -y -qq imagemagick 2>/dev/null || true
+        if [ ! -f resources/banner.png ]; then
+          convert -size 256x128 xc:'#c1121f' -fill white -gravity center -pointsize 24 -annotate 0 'TEMU DRIVER' resources/banner.png 2>/dev/null || \
+          python3 -c "
+# fallback minimal: write a tiny valid PNG later via make skip
+open('resources/banner.png','wb').write(bytes.fromhex(
+'89504e470d0a1a0a0000000d4948445200000100000000800802000000318d3f2e0000000c4944415478da6360000002000100ffff03000006000557bf0d0000000049454e44ae426082'))
+" 2>/dev/null || true
+        fi
+        if [ ! -f resources/icon.png ]; then
+          if [ -f logo.png ]; then cp logo.png resources/icon.png
+          else convert -size 48x48 xc:'#c1121f' resources/icon.png 2>/dev/null || cp resources/banner.png resources/icon.png 2>/dev/null || true
           fi
-          # Download makerom (not in default image)
-          curl -sL -o /tmp/makerom.zip \
-            "https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.3/makerom-v0.18.3-ubuntu_x86_64.zip"
-          unzip -o /tmp/makerom.zip -d /tmp/makerom_bin
-          MAKEROM=$(find /tmp/makerom_bin -type f -name makerom | head -1)
-          chmod +x "$MAKEROM"
-          "$MAKEROM" -help 2>&1 | head -5 || true
-          arm-none-eabi-strip TemuDriver3DS.elf || true
-          # Try with RSF + icon
-          "$MAKEROM" -f cia -o TemuDriver3DS.cia -elf TemuDriver3DS.elf \
-            -rsf meta/cia.rsf -icon TemuDriver3DS.smdh \
-            -exefslogo -target t 2>&1 || \
-          "$MAKEROM" -f cia -o TemuDriver3DS.cia -elf TemuDriver3DS.elf \
-            -rsf meta/cia.rsf -target t 2>&1 || \
-          "$MAKEROM" -f cia -o TemuDriver3DS.cia -elf TemuDriver3DS.elf -target t 2>&1 || true
-          ls -la TemuDriver3DS.cia || echo "CIA still missing"
+        fi
+        if [ ! -f resources/banner.wav ]; then
+          python3 -c "
+import wave
+with wave.open('resources/banner.wav','w') as w:
+    w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100)
+    w.writeframes(b'\\x00'*(44100*2*2))
+"
+        fi
+        ls -la resources/
 
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
+    - name: Build BannerTool
+      run: |
+        git clone https://github.com/carstene1ns/3ds-bannertool.git
+        cd 3ds-bannertool
+        cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
+        cmake --build build
+        cmake --install build
+
+    - name: Build Makerom
+      run: |
+        git clone --recursive https://github.com/3DSGuy/Project_CTR
+        cd Project_CTR/makerom
+        make deps
+        make
+        cp ./bin/makerom /usr/local/bin/makerom
+        chmod +x /usr/local/bin/makerom
+
+    - name: Build 3DSX and CIA
+      run: |
+        export DEVKITPRO=/opt/devkitpro
+        export DEVKITARM=/opt/devkitpro/devkitARM
+        export PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:/usr/local/bin:$PATH
+        make 3dsx
+        make cia
+        ls -la *.3dsx *.cia *.elf 2>/dev/null || true
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
           name: TemuDriver3DS
           path: |
-            TemuDriver3DS.3dsx
-            TemuDriver3DS.smdh
-            TemuDriver3DS.cia
-            TemuDriver3DS.elf
-          if-no-files-found: warn
+            ./*.cia
+            ./*.3dsx
 
-      - name: Release
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v3.4.${{ github.run_number }}
-          name: TemuDriver3DS v3.4.${{ github.run_number }}
-          files: |
-            TemuDriver3DS.3dsx
-            TemuDriver3DS.cia
-          fail_on_unmatched_files: false
-          body: |
-            - TemuDriver3DS.3dsx (HBMenu)
-            - TemuDriver3DS.cia (FBI install)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create/update GitHub Release
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ github.run_number }}
+        name: "TemuDriver3DS Build ${{ github.run_number }}"
+        files: |
+          ./*.cia
+          ./*.3dsx
+        fail_on_unmatched_files: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
