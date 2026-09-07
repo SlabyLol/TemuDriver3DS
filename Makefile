@@ -10,7 +10,7 @@ TOPDIR ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
 #---------------------------------------------------------------------------------
-TARGET		:=	$(notdir $(CURDIR))
+TARGET		:=	TemuDriver3DS
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data
@@ -18,6 +18,10 @@ INCLUDES	:=	include
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 ROMFS		:=	romfs
+
+APP_TITLE	:=	TemuDriver3DS
+APP_DESCRIPTION	:=	Temu Delivery Driver
+APP_AUTHOR	:=	SlabyLol
 
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
@@ -28,7 +32,7 @@ CFLAGS	:=	-g -Wall -O2 -mword-relocations \
 
 CFLAGS	+=	$(INCLUDE) -D__3DS__
 
-CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
+CXXFLAGS	:=	$(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
@@ -106,14 +110,16 @@ ifneq ($(ROMFS),)
 	export _3DSXFLAGS += --romfs=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: all clean
+.PHONY: all clean cia
 
 #---------------------------------------------------------------------------------
 all: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS)/gfx
-	@echo "Converting spritesheet..."
-	@mkdir -p $(ROMFS)/gfx
-	@if [ -f $(GRAPHICS)/sprites.t3s ]; then tex3ds -i $(GRAPHICS)/sprites.t3s -o $(ROMFS)/gfx/sprites.t3x || true; fi
+	@mkdir -p $(ROMFS)/gfx $(ROMFS)/cars $(ROMFS)/sfx
+	@if [ -d assets/cars ]; then cp -f assets/cars/*.obj $(ROMFS)/cars/ 2>/dev/null || true; fi
+	@if [ -d assets/cars ]; then cp -f assets/cars/*.png $(ROMFS)/cars/ 2>/dev/null || true; fi
+	@if [ -f $(GRAPHICS)/sprites.t3s ]; then tex3ds -i $(GRAPHICS)/sprites.t3s -o $(ROMFS)/gfx/sprites.t3x 2>/dev/null || true; fi
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+	@$(MAKE) --no-print-directory cia
 
 $(BUILD):
 	@mkdir -p $@
@@ -128,9 +134,27 @@ $(ROMFS)/gfx:
 	@mkdir -p $@
 
 #---------------------------------------------------------------------------------
+cia: $(OUTPUT).elf
+	@echo "Building CIA..."
+	@arm-none-eabi-strip $(OUTPUT).elf 2>/dev/null || true
+	@if command -v makerom >/dev/null 2>&1; then \
+		if [ -f meta/cia.rsf ]; then \
+			makerom -f cia -o $(OUTPUT).cia -elf $(OUTPUT).elf \
+				-rsf meta/cia.rsf -icon $(OUTPUT).smdh \
+				-exefslogo -target t && echo "CIA: $(OUTPUT).cia" || \
+			makerom -f cia -o $(OUTPUT).cia -elf $(OUTPUT).elf -target t && echo "CIA (simple): $(OUTPUT).cia" || \
+			echo "CIA build failed"; \
+		else \
+			makerom -f cia -o $(OUTPUT).cia -elf $(OUTPUT).elf -target t && echo "CIA: $(OUTPUT).cia" || echo "CIA failed"; \
+		fi; \
+	else \
+		echo "makerom not found - skip CIA"; \
+	fi
+
+#---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(ROMFS)/gfx/sprites.t3x
+	@rm -fr $(BUILD) $(TARGET).3dsx $(OUTPUT).smdh $(TARGET).elf $(TARGET).cia $(ROMFS)/gfx/sprites.t3x
 
 #---------------------------------------------------------------------------------
 else
