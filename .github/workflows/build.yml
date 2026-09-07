@@ -3,8 +3,6 @@ name: Build TemuDriver3DS
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -17,17 +15,21 @@ jobs:
       image: devkitpro/devkitarm:latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Build
         run: |
           export DEVKITPRO=/opt/devkitpro
           export DEVKITARM=/opt/devkitpro/devkitARM
           export PATH=$DEVKITARM/bin:$PATH
+          mkdir -p romfs/gfx romfs/sfx
+          if command -v tex3ds >/dev/null; then
+            tex3ds -i gfx/sprites.t3s -o romfs/gfx/sprites.t3x || true
+          fi
           make -j$(nproc)
+          ls -la
 
-      - name: Upload artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: TemuDriver3DS
@@ -36,28 +38,19 @@ jobs:
             TemuDriver3DS.smdh
             TemuDriver3DS.elf
 
-      - name: Create Release (on main)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: TemuDriver3DS v1.0.${{ github.run_number }}
-          files: |
-            TemuDriver3DS.3dsx
-            TemuDriver3DS.smdh
+          tag_name: v1.3.${{ github.run_number }}
+          name: TemuDriver3DS v1.3.${{ github.run_number }}
+          files: TemuDriver3DS.3dsx
           body: |
-            Temu Driver 3DS - Be a Temu delivery driver!
-            
-            **Features:**
-            - Steer with Circle Pad (left/right)
-            - Drift with Y or B
-            - Upgrades (Speed, Handling, Reward)
-            - Customize car color
-            - Levels and money system
-            - Faster delivery + fewer crashes = more money
-            - Update check on start
-            
-            Place the .3dsx in /3ds/ on your SD card and launch with Homebrew Launcher.
-          generate_release_notes: false
+            Pure citro2d Temu Driver
+            - Top screen: driving
+            - Bottom: steering wheel + pedal + bars
+            - A/R = Pedal (boost)
+            - Y/B/L = Drift
+            - Circle Pad = Steer
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
