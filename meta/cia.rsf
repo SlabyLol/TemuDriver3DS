@@ -1,0 +1,75 @@
+BasicInfo:
+  Title                   : "TemuDriver3DS"
+  CompanyCode             : "00"
+  ProductCode             : "CTR-P-TEMU"
+  ContentType             : Application
+  Logo                    : Homebrew
+
+TitleInfo:
+  UniqueId                : 0xFF3D1
+  Category                : Application
+  Version                 : 3
+
+Option:
+  UseOnSD                 : true
+  FreeProductCode         : true
+  MediaFootPadding        : false
+  EnableCompress          : true
+  IdealProcessor          : 0
+  Priority                : 16
+  EnableCrypt             : false
+  ExtSaveDataId           : 0
+  SystemSaveDataId1       : 0
+  SystemSaveDataId2       : 0
+  OtherUserSaveDataId1    : 0
+  OtherUserSaveDataId2    : 0
+  OtherUserSaveDataId3    : 0
+  UseOtherVariationSaveData : false
+
+AccessControlInfo:
+  CoreVersion             : 2
+  DescVersion             : 2
+  ReleaseKernelMajor      : "02"
+  ReleaseKernelMinor      : "33"
+  MemoryType              : Application
+  HandleTableSize         : 512
+  IORegisterMapping:
+    - 1ff80000-1ff81fff
+    - 1ff82000-1ff83fff
+  MemoryMapping:
+    - 1f000000-1f5fffff:r
+  SystemCallAccess:
+    ArbitrateAddress: 34
+    CreateThread: 8
+    SleepThread: 10
+    GetSystemTick: 40
+    ControlProcessMemory: 112
+    CloseHandle: 35
+    OutputDebugString: 105
+  InterruptNumbers:
+  ServiceAccessControl:
+    - APT:U
+    - fs:USER
+    - gsp::Gpu
+    - hid:USER
+    - ndm:u
+    - cfg:u
+    - dsp::DSP
+    - am:net
+    - ir:rst
+    - ac:u
+    - nwm::UDS
+    - boss:U
+    - ptm:u
+    - ldr:ro
+  FileSystemAccess:
+    - CategorySystemApplication
+    - CategoryFilesystemTool
+    - DirectSdmc
+    - DirectSdmcWrite
+
+SystemControlInfo:
+  SaveDataSize: 512KB
+  RemasterVersion: 0
+  StackSize: 0x40000
+  JumpId: 0

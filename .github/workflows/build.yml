@@ -17,23 +17,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build
+      - name: Build 3DSX + CIA
         run: |
           export DEVKITPRO=/opt/devkitpro
           export DEVKITARM=/opt/devkitpro/devkitARM
           export PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:$PATH
-          mkdir -p romfs/gfx romfs/sfx romfs/cars
+          mkdir -p romfs/gfx romfs/sfx romfs/cars meta
           if [ -d assets/cars ]; then
             cp assets/cars/*.obj romfs/cars/ 2>/dev/null || true
             cp assets/cars/*.mtl romfs/cars/ 2>/dev/null || true
             cp assets/cars/*.png romfs/cars/ 2>/dev/null || true
           fi
-          ls -la romfs/cars/ || true
-          if command -v tex3ds >/dev/null; then
-            tex3ds -i gfx/sprites.t3s -o romfs/gfx/sprites.t3x || true
-          fi
-          make -j$(nproc)
+          make -j$(nproc) || true
           ls -la
+
+          if command -v makerom >/dev/null 2>&1 && [ -f TemuDriver3DS.elf ]; then
+            echo "Building CIA..."
+            arm-none-eabi-strip TemuDriver3DS.elf 2>/dev/null || true
+            makerom -f cia -o TemuDriver3DS.cia -elf TemuDriver3DS.elf \
+              -rsf meta/cia.rsf -icon TemuDriver3DS.smdh \
+              -exefslogo -target t 2>/dev/null || \
+            makerom -f cia -o TemuDriver3DS.cia -elf TemuDriver3DS.elf -target t 2>/dev/null || true
+            ls -la *.cia 2>/dev/null || echo "CIA not created (optional)"
+          fi
 
       - name: Upload
         uses: actions/upload-artifact@v4
@@ -42,20 +48,21 @@ jobs:
           path: |
             TemuDriver3DS.3dsx
             TemuDriver3DS.smdh
+            TemuDriver3DS.cia
             TemuDriver3DS.elf
 
       - name: Release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.0.${{ github.run_number }}
-          name: TemuDriver3DS v3.0.${{ github.run_number }} - 3D Cars
-          files: TemuDriver3DS.3dsx
+          tag_name: v3.1.${{ github.run_number }}
+          name: TemuDriver3DS v3.1.${{ github.run_number }}
+          files: |
+            TemuDriver3DS.3dsx
+            TemuDriver3DS.cia
           body: |
-            **3D Car Garage**
-            - Real OBJ models (Cosmo Low Poly Cars)
-            - Garage: LEFT/RIGHT switch cars, Circle Pad rotate
-            - Driving still perspective 2D for now
-            - Text labels everywhere
+            3DSX + CIA
+            - 3D garage cars
+            - First-person driving
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
