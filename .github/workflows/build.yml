@@ -1,0 +1,59 @@
+name: Build TemuDriver3DS
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          export PATH=$DEVKITARM/bin:$PATH
+          make -j$(nproc)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TemuDriver3DS
+          path: |
+            TemuDriver3DS.3dsx
+            TemuDriver3DS.smdh
+            TemuDriver3DS.elf
+
+      - name: Create Release (on main)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: TemuDriver3DS v1.0.${{ github.run_number }}
+          files: |
+            TemuDriver3DS.3dsx
+            TemuDriver3DS.smdh
+          body: |
+            Temu Driver 3DS - Be a Temu delivery driver!
+            
+            **Features:**
+            - Steer with Circle Pad (left/right)
+            - Drift with Y or B
+            - Upgrades (Speed, Handling, Reward)
+            - Customize car color
+            - Levels and money system
+            - Faster delivery + fewer crashes = more money
+            - Update check on start
+            
+            Place the .3dsx in /3ds/ on your SD card and launch with Homebrew Launcher.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
