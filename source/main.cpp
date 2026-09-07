@@ -1,17 +1,16 @@
 #include <3ds.h>
 #include <citro2d.h>
 #include <citro3d.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
 #define TW 400
 #define TH 240
-#define BW 320
-#define BH 240
 #define MAX_OBS 14
-#define MAX_SMK 24
-#define SEGS 32
+#define MAX_SMK 20
+#define SEGS 28
 
 enum State { ST_BOOT, ST_MENU, ST_GARAGE, ST_DRIVE, ST_RESULT };
 
@@ -30,6 +29,9 @@ int uSpd = 0, uHnd = 0, uRew = 0;
 float roadOff = 0;
 
 C3D_RenderTarget *topT, *botT;
+C2D_TextBuf g_staticBuf, g_dynBuf;
+C2D_Text txtTitle, txtStart, txtGarage, txtExit, txtBack;
+
 bool snd = false;
 ndspWaveBuf wb[6];
 u8* ad[6] = {};
@@ -57,24 +59,51 @@ void initS() {
     loadW("romfs:/sfx/select.wav", 4); loadW("romfs:/sfx/success.wav", 5);
 }
 
+void initText() {
+    g_staticBuf = C2D_TextBufNew(2048);
+    g_dynBuf = C2D_TextBufNew(2048);
+    C2D_TextParse(&txtTitle, g_staticBuf, "TEMU DRIVER 3DS");
+    C2D_TextOptimize(&txtTitle);
+    C2D_TextParse(&txtStart, g_staticBuf, "A  START DELIVERY");
+    C2D_TextOptimize(&txtStart);
+    C2D_TextParse(&txtGarage, g_staticBuf, "X  GARAGE / UPGRADES");
+    C2D_TextOptimize(&txtGarage);
+    C2D_TextParse(&txtExit, g_staticBuf, "START  EXIT");
+    C2D_TextOptimize(&txtExit);
+    C2D_TextParse(&txtBack, g_staticBuf, "B / START  BACK");
+    C2D_TextOptimize(&txtBack);
+}
+
+void drawDyn(const char* str, float x, float y, float sc, u32 col) {
+    C2D_TextBufClear(g_dynBuf);
+    C2D_Text t;
+    C2D_TextParse(&t, g_dynBuf, str);
+    C2D_TextOptimize(&t);
+    C2D_DrawText(&t, C2D_WithColor, x, y, 0.6f, sc, sc, col);
+}
+
 void spObs() {
     for (int i = 0; i < MAX_OBS; i++) if (!obs[i].on) {
         obs[i].on = true; obs[i].z = 90 + rand() % 50;
-        obs[i].lane = (rand() % 5) - 2.0f; obs[i].spd = 0.7f + (rand() % 60) / 100.f + level * 0.12f;
+        obs[i].lane = (rand() % 5) - 2.0f;
+        obs[i].spd = 0.7f + (rand() % 60) / 100.f + level * 0.12f;
         obs[i].typ = rand() % 4; break;
     }
 }
 void spSmk() {
     for (int i = 0; i < MAX_SMK; i++) if (!smk[i].on) {
-        smk[i].on = true; smk[i].x = TW/2 + lane * 30 + (rand()%30-15);
-        smk[i].y = TH - 40 - (rand()%15); smk[i].life = 0.5f + (rand()%20)*0.02f; break;
+        smk[i].on = true;
+        smk[i].x = TW/2 + lane * 30 + (rand()%30-15);
+        smk[i].y = TH - 40 - (rand()%15);
+        smk[i].life = 0.5f + (rand()%20)*0.02f; break;
     }
 }
 void reset() {
     lane = 0; speed = 1.2f; steerV = 0; drift = boost = false;
     for (int i = 0; i < MAX_OBS; i++) obs[i].on = false;
     for (int i = 0; i < MAX_SMK; i++) smk[i].on = false;
-    dist = 0; crash = 0; score = 0; target = 2000 + level * 550; timeL = 55 + level * 7; roadOff = 0;
+    dist = 0; crash = 0; score = 0;
+    target = 2000 + level * 550; timeL = 55 + level * 7; roadOff = 0;
 }
 
 void upd(float dt) {
@@ -149,25 +178,15 @@ void drawTop() {
     R(0, 95, TW, TH - 95, C2D_Color32(40, 120, 40, 255));
 
     for (int i = SEGS; i >= 0; i--) {
-        float z1 = 1.5f + i * 3.2f;
-        float z2 = 1.5f + (i + 1) * 3.2f;
+        float z1 = 1.5f + i * 3.2f, z2 = 1.5f + (i + 1) * 3.2f;
         float x1l, y1, s1, x1r, x2l, y2, s2, x2r;
-        proj(-2.1f, z1, &x1l, &y1, &s1);
-        proj(2.1f, z1, &x1r, &y1, &s1);
-        proj(-2.1f, z2, &x2l, &y2, &s2);
-        proj(2.1f, z2, &x2r, &y2, &s2);
-
-        float midY = (y1 + y2) * 0.5f;
-        float hh = fabsf(y2 - y1) + 1.5f;
-        float L = (x1l + x2l) * 0.5f;
-        float RR = (x1r + x2r) * 0.5f;
+        proj(-2.1f, z1, &x1l, &y1, &s1); proj(2.1f, z1, &x1r, &y1, &s1);
+        proj(-2.1f, z2, &x2l, &y2, &s2); proj(2.1f, z2, &x2r, &y2, &s2);
+        float midY = (y1 + y2) * 0.5f, hh = fabsf(y2 - y1) + 1.5f;
+        float L = (x1l + x2l) * 0.5f, RR = (x1r + x2r) * 0.5f;
         u32 col = ((i + (int)(roadOff / 20)) % 2 == 0) ? C2D_Color32(55, 55, 65, 255) : C2D_Color32(45, 45, 55, 255);
         R(L, midY - hh * 0.5f, RR - L, hh, col);
-
-        if ((i + (int)(roadOff / 15)) % 2 == 0) {
-            float cx = TW * 0.5f;
-            R(cx - 2.5f, midY - hh * 0.35f, 5, hh * 0.5f, C2D_Color32(255, 230, 60, 255));
-        }
+        if ((i + (int)(roadOff / 15)) % 2 == 0) R(TW * 0.5f - 2.5f, midY - hh * 0.35f, 5, hh * 0.5f, C2D_Color32(255, 230, 60, 255));
         R(L, midY - hh * 0.5f, 3, hh, C2D_Color32(240, 240, 240, 255));
         R(RR - 3, midY - hh * 0.5f, 3, hh, C2D_Color32(240, 240, 240, 255));
     }
@@ -175,20 +194,15 @@ void drawTop() {
     u32 cc[4] = { C2D_Color32(40, 110, 220, 255), C2D_Color32(20, 160, 110, 255),
                   C2D_Color32(230, 170, 30, 255), C2D_Color32(160, 50, 200, 255) };
     for (int i = 0; i < MAX_OBS; i++) if (obs[i].on) {
-        float sx, sy, sc;
-        proj(obs[i].lane, obs[i].z, &sx, &sy, &sc);
+        float sx, sy, sc; proj(obs[i].lane, obs[i].z, &sx, &sy, &sc);
         float w = sc * 0.75f, h = sc * 1.05f;
         R(sx - w * 0.5f, sy - h, w, h, cc[obs[i].typ % 4]);
         R(sx - w * 0.32f, sy - h * 0.8f, w * 0.64f, h * 0.28f, C2D_Color32(170, 220, 255, 255));
-        R(sx - w * 0.45f, sy - h * 0.15f, w * 0.18f, h * 0.18f, C2D_Color32(20, 20, 25, 255));
-        R(sx + w * 0.27f, sy - h * 0.15f, w * 0.18f, h * 0.18f, C2D_Color32(20, 20, 25, 255));
     }
-
     for (int i = 0; i < MAX_SMK; i++) if (smk[i].on) {
         u8 a = (u8)(smk[i].life * 140);
         R(smk[i].x - 12, smk[i].y - 12, 24, 24, C2D_Color32(190, 190, 190, a));
     }
-
     R(TW/2 - 85, TH - 58, 170, 58, C2D_Color32(190, 35, 35, 255));
     R(TW/2 - 70, TH - 48, 140, 20, C2D_Color32(30, 30, 40, 255));
     C2D_DrawCircleSolid(TW/2.f, TH - 12.f, 0.6f, 18, C2D_Color32(25, 25, 30, 255));
@@ -200,49 +214,65 @@ void drawBot() {
     C2D_SceneBegin(botT);
 
     float p = dist / target; if (p > 1) p = 1;
-    R(12, 10, 296, 16, C2D_Color32(35, 35, 50, 255));
-    R(12, 10, 296 * p, 16, C2D_Color32(30, 190, 90, 255));
+    R(12, 8, 296, 14, C2D_Color32(35, 35, 50, 255));
+    R(12, 8, 296 * p, 14, C2D_Color32(30, 190, 90, 255));
 
     float tp = timeL / (55.f + level * 7); if (tp > 1) tp = 1; if (tp < 0) tp = 0;
-    R(12, 32, 296, 11, C2D_Color32(35, 35, 50, 255));
-    R(12, 32, 296 * tp, 11, C2D_Color32(230, 175, 30, 255));
+    R(12, 28, 296, 10, C2D_Color32(35, 35, 50, 255));
+    R(12, 28, 296 * tp, 10, C2D_Color32(230, 175, 30, 255));
 
     float sp = speed / (4.5f + uSpd * 0.5f); if (sp > 1) sp = 1;
-    R(12, 50, 130, 12, C2D_Color32(35, 35, 50, 255));
-    R(12, 50, 130 * sp, 12, C2D_Color32(60, 140, 240, 255));
+    R(12, 44, 120, 10, C2D_Color32(35, 35, 50, 255));
+    R(12, 44, 120 * sp, 10, C2D_Color32(60, 140, 240, 255));
 
-    float cx = 95, cy = 145;
-    C2D_DrawCircleSolid(cx, cy, 0.4f, 55, C2D_Color32(30, 30, 40, 255));
-    C2D_DrawCircleSolid(cx, cy, 0.45f, 42, C2D_Color32(50, 50, 60, 255));
-    C2D_DrawCircleSolid(cx, cy, 0.5f, 13, C2D_Color32(200, 40, 40, 255));
-    float a = steerV * 0.017453f;
-    float co = cosf(a), si = sinf(a);
-    R(cx - 35 * co, cy - 35 * si - 3, 70, 6, C2D_Color32(150, 150, 160, 255));
-    R(cx + 35 * si - 3, cy - 35 * co, 6, 70, C2D_Color32(150, 150, 160, 255));
+    char buf[64];
+    snprintf(buf, sizeof(buf), "DIST %.0f / %.0f", dist, target);
+    drawDyn(buf, 14, 58, 0.4f, C2D_Color32(255, 255, 255, 255));
+    snprintf(buf, sizeof(buf), "TIME %.0fs  LV%d  $%d", timeL, level, money);
+    drawDyn(buf, 14, 72, 0.38f, C2D_Color32(220, 220, 220, 255));
+    snprintf(buf, sizeof(buf), "CRASH %d", crash);
+    drawDyn(buf, 200, 44, 0.4f, C2D_Color32(255, 100, 100, 255));
 
-    R(215, 115, 60, 85, C2D_Color32(40, 40, 50, 255));
-    R(223, 123, 44, 69, boost ? C2D_Color32(230, 45, 45, 255) : C2D_Color32(85, 30, 30, 255));
+    float cx = 90, cy = 150;
+    C2D_DrawCircleSolid(cx, cy, 0.4f, 50, C2D_Color32(30, 30, 40, 255));
+    C2D_DrawCircleSolid(cx, cy, 0.45f, 38, C2D_Color32(50, 50, 60, 255));
+    C2D_DrawCircleSolid(cx, cy, 0.5f, 11, C2D_Color32(200, 40, 40, 255));
+    float a = steerV * 0.017453f, co = cosf(a), si = sinf(a);
+    R(cx - 32 * co, cy - 32 * si - 2.5f, 64, 5, C2D_Color32(150, 150, 160, 255));
+    R(cx + 32 * si - 2.5f, cy - 32 * co, 5, 64, C2D_Color32(150, 150, 160, 255));
 
-    if (drift) R(190, 50, 110, 18, C2D_Color32(220, 90, 20, 255));
+    R(210, 115, 55, 80, C2D_Color32(40, 40, 50, 255));
+    R(217, 122, 41, 66, boost ? C2D_Color32(230, 45, 45, 255) : C2D_Color32(85, 30, 30, 255));
+    if (drift) {
+        R(180, 55, 120, 16, C2D_Color32(220, 90, 20, 255));
+        drawDyn("DRIFT", 200, 55, 0.4f, C2D_Color32(255, 255, 255, 255));
+    }
+    drawDyn("A/R GAS   Y/B DRIFT", 12, 215, 0.35f, C2D_Color32(180, 180, 180, 255));
 }
 
 void drawMenu() {
     C2D_TargetClear(topT, C2D_Color32(12, 12, 25, 255));
     C2D_SceneBegin(topT);
     R(40, 25, 320, 70, C2D_Color32(25, 25, 50, 255));
-    R(60, 40, 280, 40, C2D_Color32(200, 35, 35, 255));
-    for (int i = 0; i < 12; i++) {
-        float y = 110 + i * 10;
-        float w = 60 + i * 22;
+    C2D_DrawText(&txtTitle, C2D_WithColor | C2D_AlignCenter, 200, 40, 0.6f, 0.7f, 0.7f, C2D_Color32(255, 60, 60, 255));
+    for (int i = 0; i < 10; i++) {
+        float y = 110 + i * 11, w = 50 + i * 24;
         R(TW/2 - w/2, y, w, 9, C2D_Color32(45 + i * 3, 45, 55, 255));
         if (i % 2 == 0) R(TW/2 - 2, y, 4, 7, C2D_Color32(240, 220, 50, 255));
     }
 
     C2D_TargetClear(botT, C2D_Color32(15, 15, 25, 255));
     C2D_SceneBegin(botT);
-    R(30, 30, 260, 45, C2D_Color32(35, 100, 190, 255));
-    R(30, 90, 260, 45, C2D_Color32(30, 140, 80, 255));
-    R(30, 150, 260, 45, C2D_Color32(140, 40, 40, 255));
+    R(30, 30, 260, 42, C2D_Color32(35, 100, 190, 255));
+    C2D_DrawText(&txtStart, C2D_WithColor, 45, 38, 0.6f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
+    R(30, 90, 260, 42, C2D_Color32(30, 140, 80, 255));
+    C2D_DrawText(&txtGarage, C2D_WithColor, 45, 98, 0.6f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
+    R(30, 150, 260, 42, C2D_Color32(140, 40, 40, 255));
+    C2D_DrawText(&txtExit, C2D_WithColor, 45, 158, 0.6f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
+
+    char buf[48];
+    snprintf(buf, sizeof(buf), "Money $%d  Level %d", money, level);
+    drawDyn(buf, 30, 210, 0.45f, C2D_Color32(200, 200, 200, 255));
 }
 
 void drawGarage() {
@@ -250,24 +280,40 @@ void drawGarage() {
     C2D_SceneBegin(topT);
     R(30, 20, 340, 200, C2D_Color32(25, 25, 45, 255));
     R(TW/2 - 45, 70, 90, 110, C2D_Color32(200, 35, 35, 255));
-    R(TW/2 - 30, 85, 60, 25, C2D_Color32(160, 210, 255, 255));
+    drawDyn("GARAGE", 160, 30, 0.6f, C2D_Color32(255, 255, 255, 255));
 
     C2D_TargetClear(botT, C2D_Color32(15, 15, 25, 255));
     C2D_SceneBegin(botT);
-    R(20, 25, 280, 38, C2D_Color32(45, 95, 170, 255));
-    R(20, 75, 280, 38, C2D_Color32(35, 130, 80, 255));
-    R(20, 125, 280, 38, C2D_Color32(150, 110, 25, 255));
-    R(20, 180, 280, 38, C2D_Color32(90, 35, 35, 255));
+    char buf[64];
+    snprintf(buf, sizeof(buf), "A  SPEED Lv%d  $%d", uSpd, 170 + uSpd * 110);
+    R(20, 25, 280, 36, C2D_Color32(45, 95, 170, 255));
+    drawDyn(buf, 30, 32, 0.42f, C2D_Color32(255, 255, 255, 255));
+    snprintf(buf, sizeof(buf), "X  HANDLING Lv%d  $%d", uHnd, 140 + uHnd * 85);
+    R(20, 75, 280, 36, C2D_Color32(35, 130, 80, 255));
+    drawDyn(buf, 30, 82, 0.42f, C2D_Color32(255, 255, 255, 255));
+    snprintf(buf, sizeof(buf), "Y  REWARD Lv%d  $%d", uRew, 240 + uRew * 160);
+    R(20, 125, 280, 36, C2D_Color32(150, 110, 25, 255));
+    drawDyn(buf, 30, 132, 0.42f, C2D_Color32(255, 255, 255, 255));
+    R(20, 180, 280, 36, C2D_Color32(90, 35, 35, 255));
+    C2D_DrawText(&txtBack, C2D_WithColor, 30, 188, 0.6f, 0.45f, 0.45f, C2D_Color32(255, 255, 255, 255));
 }
 
 void drawResult() {
     C2D_TargetClear(topT, C2D_Color32(12, 12, 25, 255));
     C2D_SceneBegin(topT);
     R(40, 35, 320, 170, C2D_Color32(30, 30, 55, 255));
+    char buf[64];
+    snprintf(buf, sizeof(buf), "REWARD  $%d", score);
+    drawDyn(buf, 120, 60, 0.7f, C2D_Color32(100, 255, 120, 255));
+    snprintf(buf, sizeof(buf), "Crashes %d", crash);
+    drawDyn(buf, 140, 100, 0.5f, C2D_Color32(255, 150, 150, 255));
+    snprintf(buf, sizeof(buf), "Total Money $%d", money);
+    drawDyn(buf, 110, 140, 0.5f, C2D_Color32(255, 255, 255, 255));
 
     C2D_TargetClear(botT, C2D_Color32(15, 15, 25, 255));
     C2D_SceneBegin(botT);
-    R(35, 85, 250, 55, C2D_Color32(35, 140, 70, 255));
+    R(35, 90, 250, 50, C2D_Color32(35, 140, 70, 255));
+    drawDyn("A  CONTINUE", 90, 105, 0.55f, C2D_Color32(255, 255, 255, 255));
 }
 
 int main() {
@@ -278,17 +324,15 @@ int main() {
     C2D_Prepare();
     topT = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
     botT = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
-    romfsInit(); initS();
+    romfsInit(); initS(); initText();
 
     bool run = true; u64 last = osGetTime(); int boot = 0;
-
     while (aptMainLoop() && run) {
         u64 now = osGetTime(); float dt = (now - last) / 1000.f; if (dt > 0.05f) dt = 0.05f; last = now;
         hidScanInput(); u32 d = hidKeysDown();
-
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
         switch (state) {
-        case ST_BOOT: drawMenu(); if (++boot > 70) state = ST_MENU; break;
+        case ST_BOOT: drawMenu(); if (++boot > 60) state = ST_MENU; break;
         case ST_MENU:
             drawMenu();
             if (d & KEY_A) { sfx(4); reset(); state = ST_DRIVE; }
@@ -310,6 +354,7 @@ int main() {
         }
         C3D_FrameEnd(0);
     }
+    C2D_TextBufDelete(g_staticBuf); C2D_TextBufDelete(g_dynBuf);
     for (int i = 0; i < 6; i++) if (ad[i]) linearFree(ad[i]);
     ndspExit(); romfsExit(); C2D_Fini(); C3D_Fini(); gfxExit();
     return 0;
