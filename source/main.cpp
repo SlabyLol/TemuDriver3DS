@@ -126,8 +126,10 @@ static void drawCar3D(float angleY, float posX, float posY, float posZ, float sc
 	C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
 	C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
 
-	C3D_CullFace(GPU_CULL_NONE);
+	C3D_CullFace(GPU_CULL_BACK);
 	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+	C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
 
 	C3D_Mtx projection, modelView;
 	Mtx_PerspTilt(&projection, C3D_AngleFromDegrees(42.0f), 400.0f / 240.0f, 0.1f, 100.0f, false);
@@ -185,11 +187,11 @@ static void updateDrive(float dt) {
 	roadOff += speed * 28.f * dt;
 	static float timer = 0;
 	timer += dt;
-	if (timer > 0.7f) { spawnObs(); timer = 0; }
+	if (timer > 0.85f) { spawnObs(); timer = 0; }
 	for (int i = 0; i < MAX_OBS; i++) if (obs[i].on) {
 		obs[i].z -= (speed + 1.2f) * 16.f * dt;
 		if (obs[i].z < 2.f) {
-			if (fabsf(obs[i].lane - lane) < 0.8f) {
+			if (fabsf(obs[i].lane - lane) < 0.55f) {
 				crash++;
 				speed *= 0.4f;
 			}
@@ -279,7 +281,7 @@ static void drawGarage(float dt) {
 }
 
 static void drawDrive() {
-	/* First-person road view */
+	/* 1) Draw full 2D scene first: sky + grass + road */
 	C2D_TargetClear(top, C2D_Color32(95, 175, 245, 255));
 	C2D_SceneBegin(top);
 	rect(0, 0, TOP_W, 70, C2D_Color32(110, 185, 250, 255));
@@ -313,18 +315,21 @@ static void drawDrive() {
 		rect(TOP_W * 0.5f - 70, TOP_H - 40, 140, 40, C2D_Color32(30, 30, 40, 255));
 	}
 
+	/* 2) 3D cars on top WITHOUT wiping the road */
 	if (shaderOk && meshOk) {
+		C2D_Flush();
 		C3D_FrameDrawOn(top);
+		C3D_RenderTargetClear(top, C3D_CLEAR_DEPTH, 0, 0);
 		for (int i = 0; i < MAX_OBS; i++) if (obs[i].on) {
 			float relLane = obs[i].lane - lane;
-			float worldX = relLane * 0.85f;
-			float worldZ = -2.0f - obs[i].z * 0.11f;
-			float sc = 0.35f + 0.25f * (1.f / (1.f + obs[i].z * 0.03f));
-			if (obs[i].z < 55.f)
-				drawCar3D(0.0f, worldX, -0.95f, worldZ, sc);
+			float worldX = relLane * 1.1f;
+			float worldZ = -3.5f - obs[i].z * 0.14f;
+			float sc = 0.22f + 0.35f * (1.f / (1.f + obs[i].z * 0.04f));
+			if (obs[i].z < 70.f)
+				drawCar3D(3.14159f, worldX, -0.7f, worldZ, sc);
 		}
-		float yaw = steerV * 0.012f;
-		drawCar3D(yaw, 0.0f, -1.55f, -2.1f, 0.72f);
+		float yaw = steerV * 0.015f;
+		drawCar3D(yaw, 0.0f, -1.85f, -2.8f, 0.45f);
 		C2D_Prepare();
 	}
 
