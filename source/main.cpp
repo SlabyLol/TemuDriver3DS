@@ -32,11 +32,12 @@ C3D_RenderTarget *topT, *botT;
 C2D_TextBuf g_staticBuf, g_dynBuf;
 C2D_Text txtTitle, txtStart, txtGarage, txtExit, txtBack;
 
-static DVLB_s* vshader_dvlb;
+static DVLB_s* vshader_dvlb = nullptr;
 static shaderProgram_s program;
-static int uLoc_projection, uLoc_modelView;
+static int uLoc_projection = -1, uLoc_modelView = -1;
 static Mesh carMesh;
 static bool meshOk = false;
+static bool shaderOk = false;
 static const char* carFiles[] = {
 	"romfs:/cars/coupe.obj", "romfs:/cars/van.obj", "romfs:/cars/police.obj",
 	"romfs:/cars/jeep.obj", "romfs:/cars/rally.obj", "romfs:/cars/lamb.obj"
@@ -80,7 +81,7 @@ void initText() {
 	C2D_TextOptimize(&txtTitle);
 	C2D_TextParse(&txtStart, g_staticBuf, "A  START DELIVERY");
 	C2D_TextOptimize(&txtStart);
-	C2D_TextParse(&txtGarage, g_staticBuf, "X  GARAGE / 3D CARS");
+	C2D_TextParse(&txtGarage, g_staticBuf, "X  GARAGE");
 	C2D_TextOptimize(&txtGarage);
 	C2D_TextParse(&txtExit, g_staticBuf, "START  EXIT");
 	C2D_TextOptimize(&txtExit);
@@ -97,56 +98,30 @@ void drawDyn(const char* str, float x, float y, float sc, u32 col) {
 }
 
 void init3D() {
+	shaderOk = false;
+	meshOk = false;
 	vshader_dvlb = DVLB_ParseFile((u32*)vshader_shbin, vshader_shbin_size);
+	if (!vshader_dvlb) return;
 	shaderProgramInit(&program);
 	shaderProgramSetVsh(&program, &vshader_dvlb->DVLE[0]);
 	C3D_BindProgram(&program);
 	uLoc_projection = shaderInstanceGetUniformLocation(program.vertexShader, "projection");
 	uLoc_modelView = shaderInstanceGetUniformLocation(program.vertexShader, "modelView");
-	C3D_AttrInfo* attrInfo = C3D_GetAttrInfo();
-	AttrInfo_Init(attrInfo);
-	AttrInfo_AddLoader(attrInfo, 0, GPU_FLOAT, 3);
-	AttrInfo_AddLoader(attrInfo, 1, GPU_FLOAT, 4);
+	shaderOk = true;
+	/* mesh optional - do not crash if missing */
 	meshOk = meshLoadOBJ(carFiles[0], &carMesh, 0.85f, 0.15f, 0.15f);
 }
 
 void loadCar(int idx) {
 	if (idx < 0 || idx >= NUM_CARS) return;
 	meshFree(&carMesh);
+	meshOk = false;
 	float colors[][3] = {
 		{0.85f,0.15f,0.15f}, {0.2f,0.5f,0.9f}, {0.1f,0.1f,0.15f},
 		{0.2f,0.6f,0.2f}, {0.9f,0.7f,0.1f}, {0.9f,0.85f,0.1f}
 	};
 	meshOk = meshLoadOBJ(carFiles[idx], &carMesh, colors[idx][0], colors[idx][1], colors[idx][2]);
 	carSelect = idx;
-}
-
-void drawCar3D(float angleY) {
-	if (!meshOk || !carMesh.loaded) return;
-	C3D_BindProgram(&program);
-	C3D_AttrInfo* attrInfo = C3D_GetAttrInfo();
-	AttrInfo_Init(attrInfo);
-	AttrInfo_AddLoader(attrInfo, 0, GPU_FLOAT, 3);
-	AttrInfo_AddLoader(attrInfo, 1, GPU_FLOAT, 4);
-	C3D_BufInfo* bufInfo = C3D_GetBufInfo();
-	BufInfo_Init(bufInfo);
-	BufInfo_Add(bufInfo, carMesh.vbo, sizeof(MeshVertex), 2, 0x10);
-	C3D_TexEnv* env = C3D_GetTexEnv(0);
-	C3D_TexEnvInit(env);
-	C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
-	C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
-	C3D_CullFace(GPU_CULL_NONE);
-	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
-	C3D_Mtx projection, modelView;
-	Mtx_PerspTilt(&projection, C3D_AngleFromDegrees(45.0f), 400.0f/240.0f, 0.1f, 50.0f, false);
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_projection, &projection);
-	Mtx_Identity(&modelView);
-	Mtx_Translate(&modelView, 0.0f, -0.6f, -5.5f, true);
-	Mtx_RotateY(&modelView, angleY, true);
-	Mtx_RotateX(&modelView, C3D_AngleFromDegrees(-12.0f), true);
-	Mtx_Scale(&modelView, 0.9f, 0.9f, 0.9f);
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_modelView, &modelView);
-	C3D_DrawArrays(GPU_TRIANGLES, 0, carMesh.count);
 }
 
 void spObs() {
@@ -284,25 +259,20 @@ void drawMenu() {
 	drawDyn(buf, 30, 210, 0.45f, C2D_Color32(200, 200, 200, 255));
 }
 
-void drawGarage3D(float dt) {
-	C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-	C3D_RenderTargetClear(topT, C3D_CLEAR_ALL, C2D_Color32(30, 30, 50, 255), 0);
-	C3D_FrameDrawOn(topT);
-	carAngle += dt * 1.2f;
-	drawCar3D(carAngle);
+void drawGarage() {
+	C2D_TargetClear(topT, C2D_Color32(30, 30, 50, 255));
+	C2D_SceneBegin(topT);
+	R(80, 50, 240, 120, C2D_Color32(180, 40, 40, 255));
+	R(100, 70, 200, 50, C2D_Color32(20, 20, 30, 255));
+	drawDyn(carNames[carSelect], 130, 85, 0.6f, C2D_Color32(255, 255, 255, 255));
 	C2D_TargetClear(botT, C2D_Color32(15, 15, 25, 255));
 	C2D_SceneBegin(botT);
 	char buf[64];
-	snprintf(buf, sizeof(buf), "3D CAR: %s", carNames[carSelect]);
+	snprintf(buf, sizeof(buf), "CAR: %s", carNames[carSelect]);
 	drawDyn(buf, 20, 20, 0.5f, C2D_Color32(255, 255, 255, 255));
 	drawDyn("LEFT/RIGHT  change car", 20, 50, 0.4f, C2D_Color32(180, 180, 180, 255));
-	drawDyn("Circle Pad  rotate", 20, 70, 0.4f, C2D_Color32(180, 180, 180, 255));
-	snprintf(buf, sizeof(buf), "Mesh: %s", meshOk ? "LOADED" : "FAILED");
-	drawDyn(buf, 20, 100, 0.4f, meshOk ? C2D_Color32(100, 255, 100, 255) : C2D_Color32(255, 80, 80, 255));
-	if (meshOk) {
-		snprintf(buf, sizeof(buf), "Tris: %d", carMesh.count / 3);
-		drawDyn(buf, 20, 120, 0.4f, C2D_Color32(200, 200, 200, 255));
-	}
+	snprintf(buf, sizeof(buf), "3D shader: %s", shaderOk ? "OK" : "off");
+	drawDyn(buf, 20, 80, 0.4f, C2D_Color32(200, 200, 100, 255));
 	R(20, 180, 280, 36, C2D_Color32(90, 35, 35, 255));
 	C2D_DrawText(&txtBack, C2D_WithColor, 30, 188, 0.6f, 0.45f, 0.45f, C2D_Color32(255, 255, 255, 255));
 }
@@ -328,42 +298,70 @@ int main() {
 	C2D_Prepare();
 	topT = C2D_CreateScreenTarget(GFX_TOP, GFX_LEFT);
 	botT = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
-	romfsInit(); initS(); initText(); init3D();
-	bool run = true; u64 last = osGetTime(); int boot = 0;
+	romfsInit();
+	initS();
+	initText();
+	init3D();
+
+	bool run = true;
+	u64 last = osGetTime();
+	int boot = 0;
 	while (aptMainLoop() && run) {
-		u64 now = osGetTime(); float dt = (now - last) / 1000.f; if (dt > 0.05f) dt = 0.05f; last = now;
-		hidScanInput(); u32 d = hidKeysDown();
-		circlePosition cp; hidCircleRead(&cp);
-		if (state != ST_GARAGE) C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+		u64 now = osGetTime();
+		float dt = (now - last) / 1000.f;
+		if (dt > 0.05f) dt = 0.05f;
+		last = now;
+		hidScanInput();
+		u32 d = hidKeysDown();
+
+		C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+
 		switch (state) {
-		case ST_BOOT: drawMenu(); if (++boot > 50) state = ST_MENU; break;
+		case ST_BOOT:
+			drawMenu();
+			if (++boot > 30) state = ST_MENU;
+			break;
 		case ST_MENU:
 			drawMenu();
 			if (d & KEY_A) { sfx(4); reset(); state = ST_DRIVE; }
-			if (d & KEY_X) { sfx(4); loadCar(carSelect); state = ST_GARAGE; carAngle = 0; }
+			if (d & KEY_X) { sfx(4); loadCar(carSelect); state = ST_GARAGE; }
 			if (d & KEY_START) run = false;
 			break;
-		case ST_GARAGE: {
+		case ST_GARAGE:
 			if (d & KEY_LEFT) { loadCar((carSelect + NUM_CARS - 1) % NUM_CARS); sfx(4); }
 			if (d & KEY_RIGHT) { loadCar((carSelect + 1) % NUM_CARS); sfx(4); }
 			if (d & (KEY_START | KEY_B)) { sfx(4); state = ST_MENU; }
-			carAngle += (cp.dx / 160.f) * dt * 3.0f;
-			drawGarage3D(dt);
+			drawGarage();
 			break;
-		}
-		case ST_DRIVE: upd(dt); drawTopDrive(); drawBotHUD(); break;
+		case ST_DRIVE:
+			upd(dt);
+			drawTopDrive();
+			drawBotHUD();
+			break;
 		case ST_RESULT:
 			drawResult();
-			if (d & KEY_A) { if (dist >= target) level++; sfx(4); state = ST_MENU; }
+			if (d & KEY_A) {
+				if (dist >= target) level++;
+				sfx(4);
+				state = ST_MENU;
+			}
 			break;
 		}
 		C3D_FrameEnd(0);
 	}
+
 	meshFree(&carMesh);
-	shaderProgramFree(&program);
-	DVLB_Free(vshader_dvlb);
-	C2D_TextBufDelete(g_staticBuf); C2D_TextBufDelete(g_dynBuf);
+	if (shaderOk) {
+		shaderProgramFree(&program);
+		if (vshader_dvlb) DVLB_Free(vshader_dvlb);
+	}
+	C2D_TextBufDelete(g_staticBuf);
+	C2D_TextBufDelete(g_dynBuf);
 	for (int i = 0; i < 6; i++) if (ad[i]) linearFree(ad[i]);
-	ndspExit(); romfsExit(); C2D_Fini(); C3D_Fini(); gfxExit();
+	ndspExit();
+	romfsExit();
+	C2D_Fini();
+	C3D_Fini();
+	gfxExit();
 	return 0;
 }
