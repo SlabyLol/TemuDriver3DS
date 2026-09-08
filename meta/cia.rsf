@@ -1,9 +1,9 @@
 BasicInfo:
   Title                   : "TemuDriver3DS"
   CompanyCode             : "00"
-  ProductCode             : "CTR-H-TEMU"
+  ProductCode             : "WhyWouldYouDownloadIt"
   ContentType             : Application
-  Logo                    : Homebrew
+  Logo                    : None
 
 TitleInfo:
   UniqueId                : 0xFF3D1
