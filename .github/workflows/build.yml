@@ -16,9 +16,9 @@ jobs:
     - name: Checkout repo
       uses: actions/checkout@v4
 
-    - name: Ensure banner resources
+    - name: Ensure resources and romfs
       run: |
-        mkdir -p resources romfs/cars romfs/gfx romfs/sfx
+        mkdir -p resources romfs/cars romfs/gfx romfs/sfx romfs/city
         apt-get update -qq && apt-get install -y -qq imagemagick 2>/dev/null || true
         if [ ! -f resources/banner.png ]; then
           convert -size 256x128 xc:'#c1121f' -fill white -gravity center -pointsize 24 -annotate 0 'TEMU DRIVER' resources/banner.png || true
@@ -31,14 +31,15 @@ jobs:
         if [ ! -f resources/banner.wav ]; then
           python3 -c "import wave; w=wave.open('resources/banner.wav','w'); w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100); w.writeframes(b'\\x00'*(44100*2*2)); w.close()"
         fi
-        # Copy cars into romfs BEFORE make
         if [ -d assets/cars ]; then
           cp -f assets/cars/*.obj romfs/cars/ || true
           cp -f assets/cars/*.png romfs/cars/ 2>/dev/null || true
-          echo "Cars in romfs:"
-          ls -la romfs/cars/ | head -30
-        else
-          echo "WARNING: assets/cars missing"
+        fi
+        if [ -d assets/city ]; then
+          cp -f assets/city/*.obj romfs/city/ 2>/dev/null || true
+          cp -f assets/city/*.mtl romfs/city/ 2>/dev/null || true
+          echo "City assets:"
+          ls -la romfs/city/ || true
         fi
 
     - name: Build BannerTool
@@ -63,10 +64,9 @@ jobs:
         export DEVKITPRO=/opt/devkitpro
         export DEVKITARM=/opt/devkitpro/devkitARM
         export PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:/usr/local/bin:$PATH
-        # ensure cars present
-        mkdir -p romfs/cars
+        mkdir -p romfs/cars romfs/city
         cp -f assets/cars/*.obj romfs/cars/ 2>/dev/null || true
-        ls romfs/cars/*.obj | wc -l
+        cp -f assets/city/*.obj romfs/city/ 2>/dev/null || true
         make 3dsx
         make cia
         ls -la *.3dsx *.cia *.elf 2>/dev/null || true
