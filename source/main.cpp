@@ -123,7 +123,7 @@ static void drawCar3D(float angleY) {
 
 	C3D_TexEnv* env = C3D_GetTexEnv(0);
 	C3D_TexEnvInit(env);
-	C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, 0, 0);
+	C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
 	C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
 
 	C3D_CullFace(GPU_CULL_NONE);
@@ -166,7 +166,8 @@ static void updateDrive(float dt) {
 	u32 d = hidKeysDown();
 	circlePosition c; hidCircleRead(&c);
 	float st = c.dx / 155.f;
-	if (st > 1) st = 1; if (st < -1) st = -1;
+	if (st > 1.f) st = 1.f;
+	if (st < -1.f) st = -1.f;
 	steerV += (st * 70.f - steerV) * 0.25f;
 	boost = (h & (KEY_A | KEY_R)) != 0;
 	drift = ((h & (KEY_Y | KEY_B | KEY_L)) != 0) && fabsf(st) > 0.15f;
