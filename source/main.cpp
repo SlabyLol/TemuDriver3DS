@@ -105,7 +105,7 @@ static void drawCar3D(float angleY,float posX,float posY,float posZ,float scale)
 }
 
 static void resetDrive(){
-	lane=0; speed=2.0f; steerV=0; yawRate=0;
+	lane=0; speed=0.f; steerV=0; yawRate=0;  /* start stopped - only move with A */
 	drift=boost=false; crashStun=0; spinVel=0;
 	dist=0; crash=0; score=0; roadOff=0;
 	target=1800.f+level*400.f; timeL=55.f+level*8.f;
@@ -144,53 +144,57 @@ static void updateDrive(float dt){
 		return;
 	}
 
-	boost=(h&(KEY_A|KEY_R))!=0;
-	drift=((h&(KEY_Y|KEY_B|KEY_L))!=0) && fabsf(stick)>0.12f;
+	/* Gas ONLY with A or R - no automatic drive */
+	boost = (h & (KEY_A | KEY_R)) != 0;
+	drift = ((h & (KEY_Y | KEY_L)) != 0) && fabsf(stick) > 0.12f;
+	bool braking = (h & KEY_B) != 0;
 
-	float engineForce = boost ? 14.0f : 7.0f;
-	float drag = 1.8f + speed*0.15f;
-	float brake = ((h&KEY_B)&&!drift) ? 12.0f : 0.f;
-	speed += (engineForce - drag - brake)*dt*0.35f;
-	if(speed<0.5f) speed=0.5f;
-	if(speed>12.0f) speed=12.0f;
+	float engineForce = 0.f;
+	if (boost) engineForce = 16.0f;   /* accelerate only while holding A */
+	float drag = 2.2f + speed * 0.25f;  /* natural slowdown */
+	float brake = braking ? 18.0f : 0.f;
+	speed += (engineForce - drag - brake) * dt * 0.4f;
+	if (speed < 0.f) speed = 0.f;
+	if (speed > 12.0f) speed = 12.0f;
 
+	/* steering only useful when moving */
 	float grip = drift ? 0.45f : 1.0f;
-	float steerTarget = stick * (2.8f / (0.6f + speed*0.12f));
-	yawRate += (steerTarget - yawRate)*8.f*dt*grip;
+	float steerTarget = stick * (2.8f / (0.6f + speed * 0.12f + 0.01f));
+	yawRate += (steerTarget - yawRate) * 8.f * dt * grip;
 	lane += yawRate * speed * 0.22f * dt;
-	steerV += (stick*65.f - steerV)*0.3f;
+	steerV += (stick * 65.f - steerV) * 0.3f;
 
-	if(lane<-2.15f){ lane=-2.15f; yawRate*=-0.4f; speed*=0.85f; }
-	if(lane> 2.15f){ lane= 2.15f; yawRate*=-0.4f; speed*=0.85f; }
+	if (lane < -2.15f) { lane = -2.15f; yawRate *= -0.4f; speed *= 0.85f; }
+	if (lane >  2.15f) { lane =  2.15f; yawRate *= -0.4f; speed *= 0.85f; }
 
-	dist += speed*18.f*dt;
+	dist += speed * 18.f * dt;
 	timeL -= dt;
-	roadOff += speed*22.f*dt;
+	roadOff += speed * 22.f * dt;
 
-	static float timer=0; timer+=dt;
-	if(timer>0.75f){ spawnObs(); timer=0; }
+	static float timer = 0; timer += dt;
+	if (timer > 0.75f) { spawnObs(); timer = 0; }
 
-	for(int i=0;i<MAX_OBS;i++) if(obs[i].on){
-		obs[i].z -= (speed + obs[i].spd)*14.f*dt;
-		if(obs[i].z<10.f && obs[i].z>1.8f && fabsf(obs[i].lane-lane)<0.8f){
+	for (int i = 0; i < MAX_OBS; i++) if (obs[i].on) {
+		obs[i].z -= (speed + obs[i].spd) * 14.f * dt;
+		if (obs[i].z < 10.f && obs[i].z > 1.8f && fabsf(obs[i].lane - lane) < 0.8f) {
 			crash++;
-			crashStun = 1.5f + crash*0.25f;
-			spinVel = (obs[i].lane>lane) ? -3.5f : 3.5f;
+			crashStun = 1.5f + crash * 0.25f;
+			spinVel = (obs[i].lane > lane) ? -3.5f : 3.5f;
 			speed *= 0.08f;
 			yawRate = spinVel;
-			obs[i].on=false;
+			obs[i].on = false;
 			break;
 		}
-		if(obs[i].z<1.5f) obs[i].on=false;
+		if (obs[i].z < 1.5f) obs[i].on = false;
 	}
 
-	if(dist>=target){
-		int r=(int)(220+level*90+fmaxf(0,timeL)*7-crash*50);
-		if(r<50)r=50; money+=r; score=r; state=ST_RESULT;
-	}else if(timeL<=0||crash>=8){
-		int r=15-crash*3; if(r<0)r=0; money+=r; score=r; state=ST_RESULT;
+	if (dist >= target) {
+		int r = (int)(220 + level * 90 + fmaxf(0, timeL) * 7 - crash * 50);
+		if (r < 50) r = 50; money += r; score = r; state = ST_RESULT;
+	} else if (timeL <= 0 || crash >= 8) {
+		int r = 15 - crash * 3; if (r < 0) r = 0; money += r; score = r; state = ST_RESULT;
 	}
-	if(d&KEY_START) state=ST_MENU;
+	if (d & KEY_START) state = ST_MENU;
 }
 
 static void proj(float ln,float z,float* x,float* y,float* sc){
@@ -201,7 +205,6 @@ static void proj(float ln,float z,float* x,float* y,float* sc){
 	*sc=p*1.0f; if(*sc>120)*sc=120; if(*sc<4)*sc=4;
 }
 
-/* draw a perspective building on left or right of road */
 static void drawBuilding(float side, float z, int style){
 	float sx,sy,sc;
 	proj(side, z, &sx, &sy, &sc);
@@ -214,9 +217,7 @@ static void drawBuilding(float side, float z, int style){
 	if(style%4==3) wall = C2D_Color32(180, 150, 100, 255);
 	float bx = (side < 0) ? (sx - w - sc*0.15f) : (sx + sc*0.15f);
 	rect(bx, sy - h, w, h, wall);
-	/* roof */
 	rect(bx - 2, sy - h - sc*0.12f, w + 4, sc*0.12f, C2D_Color32(90, 50, 40, 255));
-	/* windows */
 	int rows = 2 + (style % 3);
 	for(int r=0;r<rows;r++){
 		float wy = sy - h + 6 + r * (h / (rows+1));
@@ -271,12 +272,9 @@ static void drawGarage(float dt){
 static void drawDrive(){
 	C2D_TargetClear(top,C2D_Color32(105,175,240,255));
 	C2D_SceneBegin(top);
-	/* sky */
 	rect(0,0,TOP_W,45,C2D_Color32(125,190,250,255));
-	/* grass / city ground */
 	rect(0,45,TOP_W,TOP_H-45,C2D_Color32(45,120,50,255));
 
-	/* buildings far to near (behind road strip edges) */
 	for(int i=18;i>=0;i--){
 		float z = 2.0f + i * 3.5f;
 		int style = (i * 7 + (int)(roadOff/20)) % 8;
@@ -284,7 +282,6 @@ static void drawDrive(){
 		drawBuilding( 3.6f + (i%3)*0.15f, z, style+3);
 	}
 
-	/* road */
 	for(int i=22;i>=0;i--){
 		float z1=0.9f+i*2.4f, z2=0.9f+(i+1)*2.4f;
 		float x1l,y1,s1,x1r,x2l,y2,s2,x2r;
@@ -301,7 +298,6 @@ static void drawDrive(){
 		rect(RR-7,midY-hh*0.5f,7,hh,C2D_Color32(245,245,245,255));
 	}
 
-	/* traffic cars */
 	for(int i=0;i<MAX_OBS;i++) if(obs[i].on){
 		float sx,sy,sc;
 		proj(obs[i].lane-lane*0.35f,obs[i].z,&sx,&sy,&sc);
@@ -313,7 +309,6 @@ static void drawDrive(){
 		rect(sx-w*0.32f,sy-h*0.88f,w*0.64f,h*0.32f,C2D_Color32(15,25,45,255));
 	}
 
-	/* player hood */
 	{
 		float px=TOP_W*0.5f + lane*18.f + steerV*0.15f;
 		rect(px-85, TOP_H-48, 170, 48, C2D_Color32(25,25,32,255));
@@ -366,7 +361,7 @@ static void drawDrive(){
 	rect(90-30*cosf(a),168-30*sinf(a)-3,60,6,C2D_Color32(170,170,180,255));
 	rect(208,125,62,82,C2D_Color32(45,45,55,255));
 	rect(216,133,46,66,boost?C2D_Color32(230,45,45,255):C2D_Color32(85,28,28,255));
-	text(10,218,0.38f,C2D_Color32(190,190,200,255),"A/R GAS  Y DRIFT  B BRAKE  START MENU");
+	text(10,218,0.38f,C2D_Color32(190,190,200,255),"HOLD A = GAS   B BRAKE   Y DRIFT");
 }
 
 static void drawResult(){
