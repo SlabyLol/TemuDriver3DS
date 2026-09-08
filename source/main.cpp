@@ -279,44 +279,52 @@ static void drawGarage(float dt) {
 }
 
 static void drawDrive() {
-	C2D_TargetClear(top, C2D_Color32(90, 170, 240, 255));
+	/* First-person road view */
+	C2D_TargetClear(top, C2D_Color32(95, 175, 245, 255));
 	C2D_SceneBegin(top);
-	rect(0, 0, TOP_W, 55, C2D_Color32(120, 190, 255, 255));
-	rect(0, 100, TOP_W, TOP_H - 100, C2D_Color32(45, 130, 45, 255));
-	for (int i = 14; i >= 0; i--) {
-		float z1 = 2.f + i * 3.5f;
-		float z2 = 2.f + (i + 1) * 3.5f;
+	rect(0, 0, TOP_W, 70, C2D_Color32(110, 185, 250, 255));
+	rect(0, 70, TOP_W, TOP_H - 70, C2D_Color32(40, 125, 40, 255));
+	for (int i = 16; i >= 0; i--) {
+		float z1 = 1.5f + i * 3.2f;
+		float z2 = 1.5f + (i + 1) * 3.2f;
 		float x1l, y1, s1, x1r, x2l, y2, s2, x2r;
-		proj(-2.2f, z1, &x1l, &y1, &s1);
-		proj(2.2f, z1, &x1r, &y1, &s1);
-		proj(-2.2f, z2, &x2l, &y2, &s2);
-		proj(2.2f, z2, &x2r, &y2, &s2);
+		proj(-2.4f, z1, &x1l, &y1, &s1);
+		proj(2.4f, z1, &x1r, &y1, &s1);
+		proj(-2.4f, z2, &x2l, &y2, &s2);
+		proj(2.4f, z2, &x2r, &y2, &s2);
 		float midY = (y1 + y2) * 0.5f;
-		float hh = fabsf(y2 - y1) + 1.f;
+		float hh = fabsf(y2 - y1) + 1.2f;
 		float L = (x1l + x2l) * 0.5f;
 		float RR = (x1r + x2r) * 0.5f;
-		u32 col = ((i + (int)(roadOff / 18)) & 1)
-			? C2D_Color32(60, 60, 70, 255) : C2D_Color32(45, 45, 55, 255);
+		u32 col = ((i + (int)(roadOff / 16)) & 1)
+			? C2D_Color32(55, 55, 65, 255) : C2D_Color32(40, 40, 50, 255);
 		rect(L, midY - hh * 0.5f, RR - L, hh, col);
-		if (((i + (int)(roadOff / 12)) & 1) == 0)
-			rect(TOP_W * 0.5f - 3, midY - hh * 0.3f, 6, hh * 0.45f, C2D_Color32(255, 220, 50, 255));
+		if (((i + (int)(roadOff / 10)) & 1) == 0)
+			rect(TOP_W * 0.5f - 3, midY - hh * 0.3f, 6, hh * 0.4f, C2D_Color32(255, 220, 40, 255));
+		rect(L - 8, midY - hh * 0.5f, 8, hh, C2D_Color32(180, 180, 190, 255));
+		rect(RR, midY - hh * 0.5f, 8, hh, C2D_Color32(180, 180, 190, 255));
 	}
-	for (int i = 0; i < MAX_OBS; i++) if (obs[i].on) {
-		float sx, sy, sc;
-		proj(obs[i].lane, obs[i].z, &sx, &sy, &sc);
-		rect(sx - sc * 0.4f, sy - sc, sc * 0.8f, sc, C2D_Color32(30, 90, 200, 255));
-	}
-	/* 2D fallback car underlay */
 	if (!meshOk) {
-		rect(TOP_W * 0.5f - 55 + lane * 18, TOP_H - 55, 110, 50, C2D_Color32(200, 40, 40, 255));
-		rect(TOP_W * 0.5f - 40 + lane * 18, TOP_H - 45, 80, 18, C2D_Color32(20, 20, 30, 255));
+		for (int i = 0; i < MAX_OBS; i++) if (obs[i].on) {
+			float sx, sy, sc;
+			proj(obs[i].lane, obs[i].z, &sx, &sy, &sc);
+			rect(sx - sc * 0.4f, sy - sc, sc * 0.8f, sc, C2D_Color32(30, 90, 200, 255));
+		}
+		rect(TOP_W * 0.5f - 70, TOP_H - 40, 140, 40, C2D_Color32(30, 30, 40, 255));
 	}
 
-	/* Real 3D player car on top of road */
 	if (shaderOk && meshOk) {
 		C3D_FrameDrawOn(top);
-		float yaw = -lane * 0.25f + steerV * 0.01f;
-		drawCar3D(yaw, lane * 0.35f, -1.1f, -4.2f, 0.55f);
+		for (int i = 0; i < MAX_OBS; i++) if (obs[i].on) {
+			float relLane = obs[i].lane - lane;
+			float worldX = relLane * 0.85f;
+			float worldZ = -2.0f - obs[i].z * 0.11f;
+			float sc = 0.35f + 0.25f * (1.f / (1.f + obs[i].z * 0.03f));
+			if (obs[i].z < 55.f)
+				drawCar3D(0.0f, worldX, -0.95f, worldZ, sc);
+		}
+		float yaw = steerV * 0.012f;
+		drawCar3D(yaw, 0.0f, -1.55f, -2.1f, 0.72f);
 		C2D_Prepare();
 	}
 
