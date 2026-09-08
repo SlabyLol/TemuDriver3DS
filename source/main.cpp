@@ -108,7 +108,7 @@ static void loadCar(int idx) {
 		carColors[idx][0], carColors[idx][1], carColors[idx][2]);
 }
 
-static void drawCar3D(float angleY) {
+static void drawCar3D(float angleY, float posX, float posY, float posZ, float scale) {
 	if (!shaderOk || !meshOk || !carMesh.loaded) return;
 
 	C3D_BindProgram(&program);
@@ -134,10 +134,10 @@ static void drawCar3D(float angleY) {
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_projection, &projection);
 
 	Mtx_Identity(&modelView);
-	Mtx_Translate(&modelView, 0.0f, -0.5f, -6.0f, true);
+	Mtx_Translate(&modelView, posX, posY, posZ, true);
 	Mtx_RotateY(&modelView, angleY, true);
-	Mtx_RotateX(&modelView, C3D_AngleFromDegrees(-15.0f), true);
-	Mtx_Scale(&modelView, 0.85f, 0.85f, 0.85f);
+	Mtx_RotateX(&modelView, C3D_AngleFromDegrees(-12.0f), true);
+	Mtx_Scale(&modelView, scale, scale, scale);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_modelView, &modelView);
 
 	C3D_DrawArrays(GPU_TRIANGLES, 0, carMesh.count);
@@ -253,7 +253,7 @@ static void drawGarage(float dt) {
 	if (shaderOk && meshOk) {
 		C3D_RenderTargetClear(top, C3D_CLEAR_ALL, C2D_Color32(40, 40, 60, 255), 0);
 		C3D_FrameDrawOn(top);
-		drawCar3D(carAngle);
+		drawCar3D(carAngle, 0.0f, -0.5f, -6.0f, 0.85f);
 	} else {
 		C2D_TargetClear(top, C2D_Color32(40, 40, 60, 255));
 		C2D_SceneBegin(top);
@@ -306,8 +306,19 @@ static void drawDrive() {
 		proj(obs[i].lane, obs[i].z, &sx, &sy, &sc);
 		rect(sx - sc * 0.4f, sy - sc, sc * 0.8f, sc, C2D_Color32(30, 90, 200, 255));
 	}
-	rect(TOP_W * 0.5f - 55 + lane * 18, TOP_H - 55, 110, 50, C2D_Color32(200, 40, 40, 255));
-	rect(TOP_W * 0.5f - 40 + lane * 18, TOP_H - 45, 80, 18, C2D_Color32(20, 20, 30, 255));
+	/* 2D fallback car underlay */
+	if (!meshOk) {
+		rect(TOP_W * 0.5f - 55 + lane * 18, TOP_H - 55, 110, 50, C2D_Color32(200, 40, 40, 255));
+		rect(TOP_W * 0.5f - 40 + lane * 18, TOP_H - 45, 80, 18, C2D_Color32(20, 20, 30, 255));
+	}
+
+	/* Real 3D player car on top of road */
+	if (shaderOk && meshOk) {
+		C3D_FrameDrawOn(top);
+		float yaw = -lane * 0.25f + steerV * 0.01f;
+		drawCar3D(yaw, lane * 0.35f, -1.1f, -4.2f, 0.55f);
+		C2D_Prepare();
+	}
 
 	C2D_TargetClear(bot, C2D_Color32(18, 18, 28, 255));
 	C2D_SceneBegin(bot);
@@ -378,7 +389,7 @@ int main(int argc, char** argv) {
 		switch (state) {
 		case ST_MENU:
 			drawMenu();
-			if (k & KEY_A) { resetDrive(); state = ST_DRIVE; }
+			if (k & KEY_A) { loadCar(carSelect); resetDrive(); state = ST_DRIVE; }
 			if (k & KEY_X) {
 				loadCar(carSelect);
 				carAngle = 0;
