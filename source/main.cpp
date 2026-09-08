@@ -49,7 +49,6 @@ static float carColors[][3] = {
 struct Obs { float z, lane; bool on; };
 static Obs obs[MAX_OBS];
 
-/* 3D state - only used in garage */
 static DVLB_s* vshader_dvlb = NULL;
 static shaderProgram_s program;
 static int uLoc_projection = -1, uLoc_modelView = -1;
@@ -250,11 +249,9 @@ static void drawGarage(float dt) {
 	circlePosition cp; hidCircleRead(&cp);
 	carAngle += dt * 1.0f + (cp.dx / 160.f) * dt * 2.5f;
 
-	/* Top: real 3D model if available */
 	if (shaderOk && meshOk) {
 		C3D_RenderTargetClear(top, C3D_CLEAR_ALL, C2D_Color32(40, 40, 60, 255), 0);
 		C3D_FrameDrawOn(top);
-		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_projection, &(C3D_Mtx){0}); /* ensure bound */
 		drawCar3D(carAngle);
 	} else {
 		C2D_TargetClear(top, C2D_Color32(40, 40, 60, 255));
@@ -264,7 +261,6 @@ static void drawGarage(float dt) {
 		text(100, 180, 0.45f, C2D_Color32(255, 200, 100, 255), "MODEL LOADING...");
 	}
 
-	/* Bottom always 2D text - restore C2D after 3D */
 	C2D_Prepare();
 	C2D_TargetClear(bot, C2D_Color32(25, 28, 45, 255));
 	C2D_SceneBegin(bot);
@@ -362,7 +358,6 @@ int main(int argc, char** argv) {
 	bot = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
 	romfsInit();
 	initFont();
-	/* DO NOT init 3D shader here - only in garage */
 
 	bool run = true;
 	u64 last = osGetTime();
