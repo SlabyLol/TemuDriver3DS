@@ -15,4 +15,5 @@ typedef struct {
 } Mesh;
 
 bool meshLoadOBJ(const char* path, Mesh* mesh, float r, float g, float b);
+bool meshLoadCube(Mesh* mesh, float r, float g, float b);
 void meshFree(Mesh* mesh);

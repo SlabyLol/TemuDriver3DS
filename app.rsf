@@ -69,3 +69,6 @@ AccessControlInfo:
     - i2c::MCU
     - mcu::HWC
     - ns:s
+
+RomFs:
+  RootPath                : romfs

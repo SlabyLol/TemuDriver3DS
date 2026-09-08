@@ -18,22 +18,28 @@ jobs:
 
     - name: Ensure banner resources
       run: |
-        mkdir -p resources
+        mkdir -p resources romfs/cars romfs/gfx romfs/sfx
         apt-get update -qq && apt-get install -y -qq imagemagick 2>/dev/null || true
         if [ ! -f resources/banner.png ]; then
           convert -size 256x128 xc:'#c1121f' -fill white -gravity center -pointsize 24 -annotate 0 'TEMU DRIVER' resources/banner.png || true
         fi
         if [ ! -f resources/icon.png ]; then
-          if [ -f logo.png ]; then
-            cp logo.png resources/icon.png
-          else
-            convert -size 48x48 xc:'#c1121f' resources/icon.png || true
+          if [ -f logo.png ]; then cp logo.png resources/icon.png
+          else convert -size 48x48 xc:'#c1121f' resources/icon.png || true
           fi
         fi
         if [ ! -f resources/banner.wav ]; then
           python3 -c "import wave; w=wave.open('resources/banner.wav','w'); w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100); w.writeframes(b'\\x00'*(44100*2*2)); w.close()"
         fi
-        ls -la resources/
+        # Copy cars into romfs BEFORE make
+        if [ -d assets/cars ]; then
+          cp -f assets/cars/*.obj romfs/cars/ || true
+          cp -f assets/cars/*.png romfs/cars/ 2>/dev/null || true
+          echo "Cars in romfs:"
+          ls -la romfs/cars/ | head -30
+        else
+          echo "WARNING: assets/cars missing"
+        fi
 
     - name: Build BannerTool
       run: |
@@ -57,6 +63,10 @@ jobs:
         export DEVKITPRO=/opt/devkitpro
         export DEVKITARM=/opt/devkitpro/devkitARM
         export PATH=$DEVKITARM/bin:$DEVKITPRO/tools/bin:/usr/local/bin:$PATH
+        # ensure cars present
+        mkdir -p romfs/cars
+        cp -f assets/cars/*.obj romfs/cars/ 2>/dev/null || true
+        ls romfs/cars/*.obj | wc -l
         make 3dsx
         make cia
         ls -la *.3dsx *.cia *.elf 2>/dev/null || true
