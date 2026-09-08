@@ -5,11 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include "mesh.h"
+#include "vshader_shbin.h"
 
 #define TOP_W 400
 #define TOP_H 240
-#define BOT_W 320
-#define BOT_H 240
+#define MAX_OBS 10
+#define NUM_CARS 6
 
 enum State { ST_MENU, ST_GARAGE, ST_DRIVE, ST_RESULT };
 
@@ -18,20 +20,43 @@ static C3D_RenderTarget *top, *bot;
 static C2D_TextBuf sbuf, dbuf;
 static C2D_Font font = NULL;
 
-static float lane = 0, speed = 0, steerV = 0;
+static float lane = 0, speed = 0, steerV = 0, carAngle = 0;
 static bool drift = false, boost = false;
 static int money = 1500, level = 1, crash = 0, score = 0;
 static float dist = 0, target = 2200, timeL = 60, roadOff = 0;
 static int carSelect = 0;
 
-static const char* carNames[] = {
-	"Coupe", "Van", "Police", "Jeep", "Rally", "Lamb"
+static const char* carFiles[] = {
+	"romfs:/cars/coupe.obj",
+	"romfs:/cars/van.obj",
+	"romfs:/cars/police.obj",
+	"romfs:/cars/jeep.obj",
+	"romfs:/cars/rally.obj",
+	"romfs:/cars/lamb.obj"
 };
-#define NUM_CARS 6
+static const char* carNames[] = {
+	"Coupe", "Van (Temu)", "Police", "Jeep", "Rally", "Lamb"
+};
+static float carColors[][3] = {
+	{0.85f, 0.15f, 0.15f},
+	{0.20f, 0.50f, 0.90f},
+	{0.10f, 0.10f, 0.15f},
+	{0.20f, 0.60f, 0.20f},
+	{0.90f, 0.70f, 0.10f},
+	{0.90f, 0.85f, 0.10f}
+};
 
-#define MAX_OBS 10
 struct Obs { float z, lane; bool on; };
 static Obs obs[MAX_OBS];
+
+/* 3D state - only used in garage */
+static DVLB_s* vshader_dvlb = NULL;
+static shaderProgram_s program;
+static int uLoc_projection = -1, uLoc_modelView = -1;
+static Mesh carMesh;
+static bool shaderOk = false;
+static bool meshOk = false;
+static bool shaderInited = false;
 
 static void rect(float x, float y, float w, float h, u32 c) {
 	C2D_DrawRectSolid(x, y, 0.4f, w, h, c);
@@ -47,7 +72,6 @@ static void text(float x, float y, float sc, u32 col, const char* str) {
 	C2D_TextBufClear(dbuf);
 	C2D_Text t;
 	parse(&t, dbuf, str);
-	/* draw twice: shadow + main so it's visible */
 	C2D_DrawText(&t, C2D_WithColor, x + 1.5f, y + 1.5f, 0.85f, sc, sc, C2D_Color32(0, 0, 0, 200));
 	C2D_DrawText(&t, C2D_WithColor, x, y, 0.9f, sc, sc, col);
 }
@@ -59,6 +83,65 @@ static void initFont() {
 	if (!font) font = C2D_FontLoadSystem(CFG_REGION_JPN);
 	sbuf = C2D_TextBufNew(8192);
 	dbuf = C2D_TextBufNew(8192);
+}
+
+static bool initShaderOnce() {
+	if (shaderInited) return shaderOk;
+	shaderInited = true;
+	shaderOk = false;
+	vshader_dvlb = DVLB_ParseFile((u32*)vshader_shbin, vshader_shbin_size);
+	if (!vshader_dvlb) return false;
+	shaderProgramInit(&program);
+	shaderProgramSetVsh(&program, &vshader_dvlb->DVLE[0]);
+	uLoc_projection = shaderInstanceGetUniformLocation(program.vertexShader, "projection");
+	uLoc_modelView = shaderInstanceGetUniformLocation(program.vertexShader, "modelView");
+	shaderOk = true;
+	return true;
+}
+
+static void loadCar(int idx) {
+	if (idx < 0 || idx >= NUM_CARS) return;
+	carSelect = idx;
+	meshFree(&carMesh);
+	meshOk = false;
+	if (!initShaderOnce()) return;
+	meshOk = meshLoadOBJ(carFiles[idx], &carMesh,
+		carColors[idx][0], carColors[idx][1], carColors[idx][2]);
+}
+
+static void drawCar3D(float angleY) {
+	if (!shaderOk || !meshOk || !carMesh.loaded) return;
+
+	C3D_BindProgram(&program);
+	C3D_AttrInfo* attr = C3D_GetAttrInfo();
+	AttrInfo_Init(attr);
+	AttrInfo_AddLoader(attr, 0, GPU_FLOAT, 3);
+	AttrInfo_AddLoader(attr, 1, GPU_FLOAT, 4);
+
+	C3D_BufInfo* buf = C3D_GetBufInfo();
+	BufInfo_Init(buf);
+	BufInfo_Add(buf, carMesh.vbo, sizeof(MeshVertex), 2, 0x10);
+
+	C3D_TexEnv* env = C3D_GetTexEnv(0);
+	C3D_TexEnvInit(env);
+	C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, 0, 0);
+	C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+
+	C3D_CullFace(GPU_CULL_NONE);
+	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+
+	C3D_Mtx projection, modelView;
+	Mtx_PerspTilt(&projection, C3D_AngleFromDegrees(42.0f), 400.0f / 240.0f, 0.1f, 100.0f, false);
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_projection, &projection);
+
+	Mtx_Identity(&modelView);
+	Mtx_Translate(&modelView, 0.0f, -0.5f, -6.0f, true);
+	Mtx_RotateY(&modelView, angleY, true);
+	Mtx_RotateX(&modelView, C3D_AngleFromDegrees(-15.0f), true);
+	Mtx_Scale(&modelView, 0.85f, 0.85f, 0.85f);
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_modelView, &modelView);
+
+	C3D_DrawArrays(GPU_TRIANGLES, 0, carMesh.count);
 }
 
 static void resetDrive() {
@@ -135,32 +218,26 @@ static void proj(float ln, float z, float* x, float* y, float* sc) {
 }
 
 static void drawMenu() {
-	/* TOP: title card */
 	C2D_TargetClear(top, C2D_Color32(15, 18, 40, 255));
 	C2D_SceneBegin(top);
 	rect(0, 0, TOP_W, 90, C2D_Color32(180, 30, 40, 255));
 	text(70, 28, 1.0f, C2D_Color32(255, 255, 255, 255), "TEMU DRIVER");
 	text(110, 58, 0.55f, C2D_Color32(255, 220, 220, 255), "3DS DELIVERY");
-	/* faux road */
 	for (int i = 0; i < 12; i++) {
 		float y = 100.f + i * 11.f;
 		float w = 40.f + i * 22.f;
 		rect(TOP_W * 0.5f - w * 0.5f, y, w, 8, C2D_Color32(50 + i * 4, 50, 70, 255));
 	}
-	text(100, 215, 0.45f, C2D_Color32(180, 180, 200, 255), "HOMEBREW RACING");
+	text(90, 215, 0.45f, C2D_Color32(180, 180, 200, 255), "REAL MODELS  GARAGE");
 
-	/* BOTTOM: big game-style buttons */
 	C2D_TargetClear(bot, C2D_Color32(25, 28, 45, 255));
 	C2D_SceneBegin(bot);
-	/* Start */
 	rect(25, 20, 270, 52, C2D_Color32(40, 120, 220, 255));
 	rect(25, 20, 270, 6, C2D_Color32(80, 160, 255, 255));
 	text(55, 32, 0.7f, C2D_Color32(255, 255, 255, 255), "A  START");
-	/* Garage */
 	rect(25, 85, 270, 52, C2D_Color32(30, 150, 90, 255));
 	rect(25, 85, 270, 6, C2D_Color32(60, 200, 120, 255));
-	text(55, 97, 0.7f, C2D_Color32(255, 255, 255, 255), "X  GARAGE");
-	/* Exit */
+	text(55, 97, 0.7f, C2D_Color32(255, 255, 255, 255), "X  GARAGE 3D");
 	rect(25, 150, 270, 52, C2D_Color32(160, 40, 50, 255));
 	rect(25, 150, 270, 6, C2D_Color32(220, 70, 80, 255));
 	text(55, 162, 0.7f, C2D_Color32(255, 255, 255, 255), "START  EXIT");
@@ -169,20 +246,37 @@ static void drawMenu() {
 	text(25, 215, 0.55f, C2D_Color32(255, 230, 80, 255), buf);
 }
 
-static void drawGarage() {
-	C2D_TargetClear(top, C2D_Color32(35, 35, 55, 255));
-	C2D_SceneBegin(top);
-	rect(60, 40, 280, 140, C2D_Color32(200, 40, 50, 255));
-	rect(90, 70, 220, 70, C2D_Color32(25, 25, 35, 255));
-	text(120, 90, 0.85f, C2D_Color32(255, 255, 255, 255), carNames[carSelect]);
-	text(95, 195, 0.5f, C2D_Color32(200, 200, 200, 255), "LEFT / RIGHT");
+static void drawGarage(float dt) {
+	circlePosition cp; hidCircleRead(&cp);
+	carAngle += dt * 1.0f + (cp.dx / 160.f) * dt * 2.5f;
 
+	/* Top: real 3D model if available */
+	if (shaderOk && meshOk) {
+		C3D_RenderTargetClear(top, C3D_CLEAR_ALL, C2D_Color32(40, 40, 60, 255), 0);
+		C3D_FrameDrawOn(top);
+		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_projection, &(C3D_Mtx){0}); /* ensure bound */
+		drawCar3D(carAngle);
+	} else {
+		C2D_TargetClear(top, C2D_Color32(40, 40, 60, 255));
+		C2D_SceneBegin(top);
+		rect(80, 50, 240, 120, C2D_Color32(200, 40, 50, 255));
+		text(130, 90, 0.75f, C2D_Color32(255, 255, 255, 255), carNames[carSelect]);
+		text(100, 180, 0.45f, C2D_Color32(255, 200, 100, 255), "MODEL LOADING...");
+	}
+
+	/* Bottom always 2D text - restore C2D after 3D */
+	C2D_Prepare();
 	C2D_TargetClear(bot, C2D_Color32(25, 28, 45, 255));
 	C2D_SceneBegin(bot);
 	char buf[64];
-	snprintf(buf, sizeof(buf), "CAR  %d / %d", carSelect + 1, NUM_CARS);
-	text(30, 30, 0.65f, C2D_Color32(255, 255, 255, 255), buf);
-	text(30, 70, 0.55f, C2D_Color32(180, 180, 180, 255), carNames[carSelect]);
+	snprintf(buf, sizeof(buf), "3D: %s", carNames[carSelect]);
+	text(20, 20, 0.65f, C2D_Color32(255, 255, 255, 255), buf);
+	snprintf(buf, sizeof(buf), "Mesh: %s  Tris: %d",
+		meshOk ? "OK" : "FAIL",
+		meshOk ? carMesh.count / 3 : 0);
+	text(20, 55, 0.5f, meshOk ? C2D_Color32(100, 255, 120, 255) : C2D_Color32(255, 100, 100, 255), buf);
+	text(20, 90, 0.5f, C2D_Color32(180, 180, 180, 255), "LEFT/RIGHT car");
+	text(20, 115, 0.5f, C2D_Color32(180, 180, 180, 255), "Circle Pad rotate");
 	rect(25, 170, 270, 48, C2D_Color32(120, 40, 50, 255));
 	text(55, 182, 0.65f, C2D_Color32(255, 255, 255, 255), "B  BACK");
 }
@@ -215,7 +309,6 @@ static void drawDrive() {
 		proj(obs[i].lane, obs[i].z, &sx, &sy, &sc);
 		rect(sx - sc * 0.4f, sy - sc, sc * 0.8f, sc, C2D_Color32(30, 90, 200, 255));
 	}
-	/* player car */
 	rect(TOP_W * 0.5f - 55 + lane * 18, TOP_H - 55, 110, 50, C2D_Color32(200, 40, 40, 255));
 	rect(TOP_W * 0.5f - 40 + lane * 18, TOP_H - 45, 80, 18, C2D_Color32(20, 20, 30, 255));
 
@@ -234,12 +327,10 @@ static void drawDrive() {
 	text(15, 78, 0.5f, C2D_Color32(255, 255, 255, 255), buf);
 	snprintf(buf, sizeof(buf), "CRASH %d", crash);
 	text(15, 100, 0.5f, C2D_Color32(255, 120, 120, 255), buf);
-	/* wheel */
 	C2D_DrawCircleSolid(90, 170, 0.5f, 48, C2D_Color32(40, 40, 50, 255));
 	C2D_DrawCircleSolid(90, 170, 0.55f, 14, C2D_Color32(200, 40, 40, 255));
 	float a = steerV * 0.0174533f;
 	rect(90 - 28 * cosf(a), 170 - 28 * sinf(a) - 3, 56, 6, C2D_Color32(160, 160, 170, 255));
-	/* pedal */
 	rect(210, 130, 60, 80, C2D_Color32(50, 50, 60, 255));
 	rect(218, 138, 44, 64, boost ? C2D_Color32(230, 50, 50, 255) : C2D_Color32(90, 30, 30, 255));
 	text(12, 220, 0.4f, C2D_Color32(200, 200, 200, 255), "A GAS  Y DRIFT  START MENU");
@@ -261,6 +352,7 @@ static void drawResult() {
 int main(int argc, char** argv) {
 	(void)argc; (void)argv;
 	srand((unsigned)osGetTime());
+	memset(&carMesh, 0, sizeof(carMesh));
 
 	gfxInitDefault();
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
@@ -270,6 +362,7 @@ int main(int argc, char** argv) {
 	bot = C2D_CreateScreenTarget(GFX_BOTTOM, GFX_LEFT);
 	romfsInit();
 	initFont();
+	/* DO NOT init 3D shader here - only in garage */
 
 	bool run = true;
 	u64 last = osGetTime();
@@ -283,7 +376,6 @@ int main(int argc, char** argv) {
 		hidScanInput();
 		u32 k = hidKeysDown();
 
-		/* critical: restore 2D pipeline every frame */
 		C2D_Prepare();
 		C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 
@@ -291,14 +383,21 @@ int main(int argc, char** argv) {
 		case ST_MENU:
 			drawMenu();
 			if (k & KEY_A) { resetDrive(); state = ST_DRIVE; }
-			if (k & KEY_X) state = ST_GARAGE;
+			if (k & KEY_X) {
+				loadCar(carSelect);
+				carAngle = 0;
+				state = ST_GARAGE;
+			}
 			if (k & KEY_START) run = false;
 			break;
 		case ST_GARAGE:
-			if (k & KEY_LEFT) carSelect = (carSelect + NUM_CARS - 1) % NUM_CARS;
-			if (k & KEY_RIGHT) carSelect = (carSelect + 1) % NUM_CARS;
-			if (k & (KEY_B | KEY_START)) state = ST_MENU;
-			drawGarage();
+			if (k & KEY_LEFT) loadCar((carSelect + NUM_CARS - 1) % NUM_CARS);
+			if (k & KEY_RIGHT) loadCar((carSelect + 1) % NUM_CARS);
+			if (k & (KEY_B | KEY_START)) {
+				C2D_Prepare();
+				state = ST_MENU;
+			}
+			drawGarage(dt);
 			break;
 		case ST_DRIVE:
 			updateDrive(dt);
@@ -316,6 +415,11 @@ int main(int argc, char** argv) {
 		C3D_FrameEnd(0);
 	}
 
+	meshFree(&carMesh);
+	if (shaderOk) {
+		shaderProgramFree(&program);
+		if (vshader_dvlb) DVLB_Free(vshader_dvlb);
+	}
 	if (font) C2D_FontFree(font);
 	C2D_TextBufDelete(sbuf);
 	C2D_TextBufDelete(dbuf);
