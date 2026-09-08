@@ -30,6 +30,7 @@ int carSelect = 0;
 
 C3D_RenderTarget *topT, *botT;
 C2D_TextBuf g_staticBuf, g_dynBuf;
+C2D_Font g_font = nullptr;
 C2D_Text txtTitle, txtStart, txtGarage, txtExit, txtBack;
 
 static DVLB_s* vshader_dvlb = nullptr;
@@ -74,27 +75,39 @@ void initS() {
 	loadW("romfs:/sfx/select.wav", 4); loadW("romfs:/sfx/success.wav", 5);
 }
 
+static void parseTxt(C2D_Text* t, C2D_TextBuf buf, const char* str) {
+	if (g_font)
+		C2D_TextFontParse(t, g_font, buf, str);
+	else
+		C2D_TextParse(t, buf, str);
+	C2D_TextOptimize(t);
+}
+
 void initText() {
-	g_staticBuf = C2D_TextBufNew(2048);
-	g_dynBuf = C2D_TextBufNew(2048);
-	C2D_TextParse(&txtTitle, g_staticBuf, "TEMU DRIVER 3DS");
-	C2D_TextOptimize(&txtTitle);
-	C2D_TextParse(&txtStart, g_staticBuf, "A  START DELIVERY");
-	C2D_TextOptimize(&txtStart);
-	C2D_TextParse(&txtGarage, g_staticBuf, "X  GARAGE");
-	C2D_TextOptimize(&txtGarage);
-	C2D_TextParse(&txtExit, g_staticBuf, "START  EXIT");
-	C2D_TextOptimize(&txtExit);
-	C2D_TextParse(&txtBack, g_staticBuf, "B / START  BACK");
-	C2D_TextOptimize(&txtBack);
+	cfguInit();
+	g_font = C2D_FontLoadSystem(CFG_REGION_EUR);
+	if (!g_font) g_font = C2D_FontLoadSystem(CFG_REGION_USA);
+	if (!g_font) g_font = C2D_FontLoadSystem(CFG_REGION_JPN);
+
+	g_staticBuf = C2D_TextBufNew(4096);
+	g_dynBuf = C2D_TextBufNew(4096);
+	parseTxt(&txtTitle, g_staticBuf, "TEMU DRIVER 3DS");
+	parseTxt(&txtStart, g_staticBuf, "A  START DELIVERY");
+	parseTxt(&txtGarage, g_staticBuf, "X  GARAGE");
+	parseTxt(&txtExit, g_staticBuf, "START  EXIT");
+	parseTxt(&txtBack, g_staticBuf, "B / START  BACK");
 }
 
 void drawDyn(const char* str, float x, float y, float sc, u32 col) {
+	if (!g_dynBuf) return;
 	C2D_TextBufClear(g_dynBuf);
 	C2D_Text t;
-	C2D_TextParse(&t, g_dynBuf, str);
-	C2D_TextOptimize(&t);
-	C2D_DrawText(&t, C2D_WithColor, x, y, 0.6f, sc, sc, col);
+	parseTxt(&t, g_dynBuf, str);
+	C2D_DrawText(&t, C2D_WithColor, x, y, 0.9f, sc, sc, col);
+}
+
+void drawTxt(C2D_Text* t, float x, float y, float sc, u32 col) {
+	C2D_DrawText(t, C2D_WithColor, x, y, 0.9f, sc, sc, col);
 }
 
 void init3D() {
@@ -108,7 +121,6 @@ void init3D() {
 	uLoc_projection = shaderInstanceGetUniformLocation(program.vertexShader, "projection");
 	uLoc_modelView = shaderInstanceGetUniformLocation(program.vertexShader, "modelView");
 	shaderOk = true;
-	/* mesh optional - do not crash if missing */
 	meshOk = meshLoadOBJ(carFiles[0], &carMesh, 0.85f, 0.15f, 0.15f);
 }
 
@@ -224,9 +236,9 @@ void drawBotHUD() {
 	R(12, 28, 296 * tp, 10, C2D_Color32(230, 175, 30, 255));
 	char buf[64];
 	snprintf(buf, sizeof(buf), "DIST %.0f  TIME %.0f  $%d", dist, timeL, money);
-	drawDyn(buf, 14, 48, 0.4f, C2D_Color32(255, 255, 255, 255));
+	drawDyn(buf, 14, 48, 0.55f, C2D_Color32(255, 255, 255, 255));
 	snprintf(buf, sizeof(buf), "CRASH %d  LV%d", crash, level);
-	drawDyn(buf, 14, 64, 0.4f, C2D_Color32(255, 150, 150, 255));
+	drawDyn(buf, 14, 70, 0.5f, C2D_Color32(255, 150, 150, 255));
 	float cx = 90, cy = 150;
 	C2D_DrawCircleSolid(cx, cy, 0.4f, 50, C2D_Color32(30, 30, 40, 255));
 	C2D_DrawCircleSolid(cx, cy, 0.45f, 38, C2D_Color32(50, 50, 60, 255));
@@ -235,28 +247,28 @@ void drawBotHUD() {
 	R(cx - 32 * co, cy - 32 * si - 2.5f, 64, 5, C2D_Color32(150, 150, 160, 255));
 	R(215, 115, 55, 80, C2D_Color32(40, 40, 50, 255));
 	R(222, 122, 41, 66, boost ? C2D_Color32(230, 45, 45, 255) : C2D_Color32(85, 30, 30, 255));
-	drawDyn("A/R GAS  Y/B DRIFT", 12, 215, 0.35f, C2D_Color32(180, 180, 180, 255));
+	drawDyn("A/R GAS  Y/B DRIFT", 12, 215, 0.45f, C2D_Color32(255, 255, 255, 255));
 }
 
 void drawMenu() {
 	C2D_TargetClear(topT, C2D_Color32(12, 12, 25, 255));
 	C2D_SceneBegin(topT);
-	R(40, 25, 320, 70, C2D_Color32(25, 25, 50, 255));
-	C2D_DrawText(&txtTitle, C2D_WithColor | C2D_AlignCenter, 200, 40, 0.6f, 0.7f, 0.7f, C2D_Color32(255, 60, 60, 255));
+	R(40, 25, 320, 70, C2D_Color32(40, 40, 70, 255));
+	drawTxt(&txtTitle, 55, 42, 0.85f, C2D_Color32(255, 80, 80, 255));
 	for (int i = 0; i < 10; i++) {
 		float y = 110 + i * 11, w = 50 + i * 24;
 		R(TW/2 - w/2, y, w, 9, C2D_Color32(45 + i * 3, 45, 55, 255));
 	}
-	C2D_TargetClear(botT, C2D_Color32(15, 15, 25, 255));
+	C2D_TargetClear(botT, C2D_Color32(20, 20, 35, 255));
 	C2D_SceneBegin(botT);
-	R(30, 30, 260, 42, C2D_Color32(35, 100, 190, 255));
-	C2D_DrawText(&txtStart, C2D_WithColor, 45, 38, 0.6f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
-	R(30, 90, 260, 42, C2D_Color32(30, 140, 80, 255));
-	C2D_DrawText(&txtGarage, C2D_WithColor, 45, 98, 0.6f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
-	R(30, 150, 260, 42, C2D_Color32(140, 40, 40, 255));
-	C2D_DrawText(&txtExit, C2D_WithColor, 45, 158, 0.6f, 0.5f, 0.5f, C2D_Color32(255, 255, 255, 255));
+	R(20, 25, 280, 48, C2D_Color32(35, 100, 190, 255));
+	drawTxt(&txtStart, 35, 35, 0.65f, C2D_Color32(255, 255, 255, 255));
+	R(20, 85, 280, 48, C2D_Color32(30, 140, 80, 255));
+	drawTxt(&txtGarage, 35, 95, 0.65f, C2D_Color32(255, 255, 255, 255));
+	R(20, 145, 280, 48, C2D_Color32(140, 40, 40, 255));
+	drawTxt(&txtExit, 35, 155, 0.65f, C2D_Color32(255, 255, 255, 255));
 	char buf[48]; snprintf(buf, sizeof(buf), "Money $%d  Level %d", money, level);
-	drawDyn(buf, 30, 210, 0.45f, C2D_Color32(200, 200, 200, 255));
+	drawDyn(buf, 20, 210, 0.55f, C2D_Color32(255, 255, 100, 255));
 }
 
 void drawGarage() {
@@ -264,17 +276,17 @@ void drawGarage() {
 	C2D_SceneBegin(topT);
 	R(80, 50, 240, 120, C2D_Color32(180, 40, 40, 255));
 	R(100, 70, 200, 50, C2D_Color32(20, 20, 30, 255));
-	drawDyn(carNames[carSelect], 130, 85, 0.6f, C2D_Color32(255, 255, 255, 255));
+	drawDyn(carNames[carSelect], 120, 80, 0.7f, C2D_Color32(255, 255, 255, 255));
 	C2D_TargetClear(botT, C2D_Color32(15, 15, 25, 255));
 	C2D_SceneBegin(botT);
 	char buf[64];
 	snprintf(buf, sizeof(buf), "CAR: %s", carNames[carSelect]);
-	drawDyn(buf, 20, 20, 0.5f, C2D_Color32(255, 255, 255, 255));
-	drawDyn("LEFT/RIGHT  change car", 20, 50, 0.4f, C2D_Color32(180, 180, 180, 255));
-	snprintf(buf, sizeof(buf), "3D shader: %s", shaderOk ? "OK" : "off");
-	drawDyn(buf, 20, 80, 0.4f, C2D_Color32(200, 200, 100, 255));
-	R(20, 180, 280, 36, C2D_Color32(90, 35, 35, 255));
-	C2D_DrawText(&txtBack, C2D_WithColor, 30, 188, 0.6f, 0.45f, 0.45f, C2D_Color32(255, 255, 255, 255));
+	drawDyn(buf, 20, 20, 0.6f, C2D_Color32(255, 255, 255, 255));
+	drawDyn("LEFT/RIGHT  change car", 20, 55, 0.5f, C2D_Color32(200, 200, 200, 255));
+	snprintf(buf, sizeof(buf), "3D: %s", shaderOk ? "OK" : "off");
+	drawDyn(buf, 20, 90, 0.5f, C2D_Color32(255, 255, 100, 255));
+	R(20, 180, 280, 40, C2D_Color32(90, 35, 35, 255));
+	drawTxt(&txtBack, 30, 188, 0.55f, C2D_Color32(255, 255, 255, 255));
 }
 
 void drawResult() {
@@ -283,11 +295,11 @@ void drawResult() {
 	R(40, 35, 320, 170, C2D_Color32(30, 30, 55, 255));
 	char buf[64];
 	snprintf(buf, sizeof(buf), "REWARD  $%d", score);
-	drawDyn(buf, 120, 60, 0.7f, C2D_Color32(100, 255, 120, 255));
+	drawDyn(buf, 100, 80, 0.85f, C2D_Color32(100, 255, 120, 255));
 	C2D_TargetClear(botT, C2D_Color32(15, 15, 25, 255));
 	C2D_SceneBegin(botT);
 	R(35, 90, 250, 50, C2D_Color32(35, 140, 70, 255));
-	drawDyn("A  CONTINUE", 90, 105, 0.55f, C2D_Color32(255, 255, 255, 255));
+	drawDyn("A  CONTINUE", 80, 100, 0.7f, C2D_Color32(255, 255, 255, 255));
 }
 
 int main() {
@@ -355,11 +367,13 @@ int main() {
 		shaderProgramFree(&program);
 		if (vshader_dvlb) DVLB_Free(vshader_dvlb);
 	}
+	if (g_font) C2D_FontFree(g_font);
 	C2D_TextBufDelete(g_staticBuf);
 	C2D_TextBufDelete(g_dynBuf);
 	for (int i = 0; i < 6; i++) if (ad[i]) linearFree(ad[i]);
 	ndspExit();
 	romfsExit();
+	cfguExit();
 	C2D_Fini();
 	C3D_Fini();
 	gfxExit();
