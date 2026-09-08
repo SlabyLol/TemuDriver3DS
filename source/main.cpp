@@ -44,8 +44,8 @@ static Obs obs[MAX_OBS];
 static DVLB_s* vshader_dvlb = NULL;
 static shaderProgram_s program;
 static int uLoc_projection = -1, uLoc_modelView = -1;
-static Mesh carMesh, roadMesh, buildMesh;
-static bool shaderOk = false, meshOk = false, roadOk = false, buildOk = false, shaderInited = false;
+static Mesh carMesh;
+static bool shaderOk = false, meshOk = false, shaderInited = false;
 
 static void rect(float x,float y,float w,float h,u32 c){ C2D_DrawRectSolid(x,y,0.5f,w,h,c); }
 static void parse(C2D_Text* t,C2D_TextBuf b,const char* s){
@@ -80,36 +80,29 @@ static void loadCar(int idx){
 	if(!initShaderOnce()) return;
 	meshOk=meshLoadOBJ(carFiles[idx],&carMesh,carColors[idx][0],carColors[idx][1],carColors[idx][2]);
 }
-static void loadCity(){
-	if(!initShaderOnce()) return;
-	meshFree(&roadMesh); meshFree(&buildMesh);
-	roadOk=meshLoadOBJ("romfs:/city/road-straight.obj",&roadMesh,0.35f,0.35f,0.4f);
-	if(!roadOk) roadOk=meshLoadCube(&roadMesh,0.35f,0.35f,0.4f);
-	buildOk=meshLoadOBJ("romfs:/city/low-detail-building-d.obj",&buildMesh,0.7f,0.45f,0.35f);
-	if(!buildOk) buildOk=meshLoadCube(&buildMesh,0.7f,0.45f,0.35f);
-}
 
-static void drawMesh(Mesh* m, float angleY, float posX, float posY, float posZ, float sx, float sy, float sz){
-	if(!shaderOk||!m||!m->loaded) return;
+static void drawCar3D(float angleY,float posX,float posY,float posZ,float scale){
+	if(!shaderOk||!meshOk||!carMesh.loaded) return;
 	C3D_BindProgram(&program);
 	C3D_AttrInfo* attr=C3D_GetAttrInfo(); AttrInfo_Init(attr);
 	AttrInfo_AddLoader(attr,0,GPU_FLOAT,3); AttrInfo_AddLoader(attr,1,GPU_FLOAT,4);
 	C3D_BufInfo* buf=C3D_GetBufInfo(); BufInfo_Init(buf);
-	BufInfo_Add(buf,m->vbo,sizeof(MeshVertex),2,0x10);
+	BufInfo_Add(buf,carMesh.vbo,sizeof(MeshVertex),2,0x10);
 	C3D_TexEnv* env=C3D_GetTexEnv(0); C3D_TexEnvInit(env);
 	C3D_TexEnvSrc(env,C3D_Both,GPU_PRIMARY_COLOR,GPU_PRIMARY_COLOR,GPU_PRIMARY_COLOR);
 	C3D_TexEnvFunc(env,C3D_Both,GPU_REPLACE);
 	C3D_CullFace(GPU_CULL_NONE);
 	C3D_DepthTest(true,GPU_GREATER,GPU_WRITE_ALL);
 	C3D_Mtx projection, modelView;
-	Mtx_PerspTilt(&projection,C3D_AngleFromDegrees(48.0f),400.0f/240.0f,0.08f,80.0f,true);
+	Mtx_PerspTilt(&projection,C3D_AngleFromDegrees(45.0f),400.0f/240.0f,0.1f,50.0f,false);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER,uLoc_projection,&projection);
 	Mtx_Identity(&modelView);
 	Mtx_Translate(&modelView,posX,posY,posZ,true);
 	Mtx_RotateY(&modelView,angleY,true);
-	Mtx_Scale(&modelView,sx,sy,sz);
+	Mtx_RotateX(&modelView,C3D_AngleFromDegrees(-8.0f),true);
+	Mtx_Scale(&modelView,scale,scale,scale);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER,uLoc_modelView,&modelView);
-	C3D_DrawArrays(GPU_TRIANGLES,0,m->count);
+	C3D_DrawArrays(GPU_TRIANGLES,0,carMesh.count);
 }
 
 static void resetDrive(){
@@ -151,31 +144,34 @@ static void updateDrive(float dt){
 	drift=((h&(KEY_Y|KEY_L))!=0)&&fabsf(stick)>0.12f;
 	bool braking=(h&KEY_B)!=0;
 
-	float engineForce = boost ? 16.0f : 0.f;
-	float drag = 2.2f + speed*0.25f;
-	float brake = braking ? 18.0f : 0.f;
-	speed += (engineForce - drag - brake)*dt*0.4f;
+	/* only move when holding A */
+	if(boost) speed += 10.0f * dt;
+	else speed -= 6.0f * dt;
+	if(braking) speed -= 14.0f * dt;
 	if(speed<0.f) speed=0.f;
-	if(speed>12.0f) speed=12.0f;
+	if(speed>11.0f) speed=11.0f;
 
-	float grip = drift ? 0.45f : 1.0f;
-	float steerTarget = stick * (2.8f / (0.6f + speed*0.12f + 0.01f));
+	float grip = drift ? 0.5f : 1.0f;
+	float steerTarget = stick * (2.5f / (0.5f + speed*0.15f + 0.01f));
 	yawRate += (steerTarget - yawRate)*8.f*dt*grip;
-	lane += yawRate * speed * 0.22f * dt;
+	lane += yawRate * (0.3f + speed) * 0.25f * dt;
 	steerV += (stick*65.f - steerV)*0.3f;
-	if(lane<-2.15f){ lane=-2.15f; yawRate*=-0.4f; speed*=0.85f; }
-	if(lane>2.15f){ lane=2.15f; yawRate*=-0.4f; speed*=0.85f; }
+	if(lane<-2.15f){ lane=-2.15f; yawRate*=-0.3f; }
+	if(lane>2.15f){ lane=2.15f; yawRate*=-0.3f; }
 
-	dist += speed*18.f*dt; timeL -= dt; roadOff += speed*22.f*dt;
+	dist += speed*18.f*dt;
+	timeL -= dt;
+	roadOff += speed*22.f*dt;
+
 	static float timer=0; timer+=dt;
 	if(timer>0.8f){ spawnObs(); timer=0; }
 
 	for(int i=0;i<MAX_OBS;i++) if(obs[i].on){
-		obs[i].z -= (speed + obs[i].spd)*14.f*dt;
+		obs[i].z -= (speed + obs[i].spd + 0.5f)*14.f*dt;
 		if(obs[i].z<10.f && obs[i].z>1.8f && fabsf(obs[i].lane-lane)<0.8f){
 			crash++; crashStun=1.5f+crash*0.25f;
 			spinVel=(obs[i].lane>lane)?-3.5f:3.5f;
-			speed*=0.08f; yawRate=spinVel; obs[i].on=false; break;
+			speed*=0.1f; yawRate=spinVel; obs[i].on=false; break;
 		}
 		if(obs[i].z<1.5f) obs[i].on=false;
 	}
@@ -188,12 +184,38 @@ static void updateDrive(float dt){
 	if(d&KEY_START) state=ST_MENU;
 }
 
-/* ========== MENU only 2D ========== */
+static void proj(float ln,float z,float* x,float* y,float* sc){
+	if(z<0.7f) z=0.7f;
+	float p=300.f/z;
+	*x=TOP_W*0.5f + ln*55.f*(p/10.f);
+	*y=30.f + 190.f*(1.f-1.f/(1.f+z*0.055f));
+	*sc=p; if(*sc>110)*sc=110; if(*sc<5)*sc=5;
+}
+
+static void drawBuilding(float side, float z, int style){
+	float sx,sy,sc;
+	proj(side,z,&sx,&sy,&sc);
+	float w=sc*0.5f, h=sc*(0.85f+(style%3)*0.3f);
+	if(h<10) return;
+	u32 wall=C2D_Color32(150,85,65,255);
+	if(style%4==1) wall=C2D_Color32(110,120,135,255);
+	if(style%4==2) wall=C2D_Color32(80,130,90,255);
+	if(style%4==3) wall=C2D_Color32(170,140,95,255);
+	float bx=(side<0)?(sx-w-sc*0.12f):(sx+sc*0.12f);
+	rect(bx,sy-h,w,h,wall);
+	rect(bx-2,sy-h-sc*0.1f,w+4,sc*0.1f,C2D_Color32(80,45,35,255));
+	for(int r=0;r<2+(style%2);r++){
+		float wy=sy-h+8+r*(h/3.5f);
+		rect(bx+w*0.15f,wy,w*0.25f,sc*0.07f,C2D_Color32(170,200,230,255));
+		rect(bx+w*0.55f,wy,w*0.25f,sc*0.07f,C2D_Color32(170,200,230,255));
+	}
+}
+
 static void drawMenu(){
-	C2D_TargetClear(top,C2D_Color32(12,14,32,255)); C2D_SceneBegin(top);
-	rect(0,0,TOP_W,88,C2D_Color32(190,28,38,255));
-	text(55,22,1.05f,C2D_Color32(255,255,255,255),"TEMU DRIVER");
-	text(95,55,0.5f,C2D_Color32(255,210,210,255),"v1.0  REAL 3D");
+	C2D_TargetClear(top,C2D_Color32(15,18,40,255)); C2D_SceneBegin(top);
+	rect(0,0,TOP_W,90,C2D_Color32(190,28,38,255));
+	text(55,25,1.05f,C2D_Color32(255,255,255,255),"TEMU DRIVER");
+	text(100,58,0.5f,C2D_Color32(255,210,210,255),"v1.0");
 	C2D_TargetClear(bot,C2D_Color32(22,24,40,255)); C2D_SceneBegin(bot);
 	rect(22,18,276,50,C2D_Color32(35,115,220,255));
 	text(50,30,0.72f,C2D_Color32(255,255,255,255),"A  START");
@@ -205,68 +227,102 @@ static void drawMenu(){
 	text(22,210,0.55f,C2D_Color32(255,230,70,255),buf);
 }
 
-/* ========== GARAGE pure 3D ========== */
 static void drawGarage(float dt){
 	circlePosition cp; hidCircleRead(&cp);
 	carAngle+=dt*1.1f+(cp.dx/160.f)*dt*2.8f;
-	C3D_RenderTargetClear(top,C3D_CLEAR_ALL,C2D_Color32(50,55,75,255),0);
-	C3D_FrameDrawOn(top);
-	if(meshOk) drawMesh(&carMesh, carAngle, 0.f, -0.4f, -5.0f, 0.95f, 0.95f, 0.95f);
+
+	if(shaderOk && meshOk){
+		C3D_RenderTargetClear(top, C3D_CLEAR_ALL, C2D_Color32(55,60,85,255), 0);
+		C3D_FrameDrawOn(top);
+		drawCar3D(carAngle, 0.f, -0.3f, -5.5f, 0.9f);
+	} else {
+		C2D_TargetClear(top, C2D_Color32(40,45,65,255));
+		C2D_SceneBegin(top);
+		text(90,100,0.7f,C2D_Color32(255,255,255,255),carNames[carSelect]);
+		text(80,140,0.45f,C2D_Color32(255,180,100,255),"MODEL NOT LOADED");
+	}
 	C2D_Prepare();
 	C2D_TargetClear(bot,C2D_Color32(22,24,40,255)); C2D_SceneBegin(bot);
 	char buf[64];
 	snprintf(buf,sizeof(buf),"%s",carNames[carSelect]);
 	text(20,20,0.7f,C2D_Color32(255,255,255,255),buf);
-	snprintf(buf,sizeof(buf),"Mesh: %s",meshOk?"OK":"FAIL");
+	snprintf(buf,sizeof(buf),"3D: %s",meshOk?"OK":"FAIL");
 	text(20,55,0.5f,meshOk?C2D_Color32(100,255,130,255):C2D_Color32(255,90,90,255),buf);
-	text(20,90,0.48f,C2D_Color32(180,180,190,255),"LEFT/RIGHT  Circle rotate");
+	text(20,90,0.45f,C2D_Color32(180,180,190,255),"LEFT/RIGHT  Circle rotate");
 	rect(22,170,276,46,C2D_Color32(120,35,45,255));
 	text(55,182,0.65f,C2D_Color32(255,255,255,255),"B  BACK");
 }
 
-/* ========== DRIVE pure 3D models ========== */
 static void drawDrive(){
-	/* full 3D top screen */
-	C3D_RenderTargetClear(top, C3D_CLEAR_ALL, C2D_Color32(110, 175, 235, 255), 0);
-	C3D_FrameDrawOn(top);
+	/* ALWAYS draw visible road first so top is never blank */
+	C2D_TargetClear(top, C2D_Color32(105,175,240,255));
+	C2D_SceneBegin(top);
+	rect(0,0,TOP_W,48,C2D_Color32(120,185,250,255));
+	rect(0,48,TOP_W,TOP_H-48,C2D_Color32(40,130,45,255));
 
-	/* road tiles along Z */
-	if(roadOk){
-		float base = fmodf(roadOff * 0.08f, 2.0f);
-		for(int i=0;i<14;i++){
-			float z = -1.0f - i*2.0f + base;
-			drawMesh(&roadMesh, 0.f, -lane*0.15f, -1.2f, z, 4.5f, 1.f, 2.0f);
-		}
+	for(int i=16;i>=0;i--){
+		float z=1.5f+i*3.2f;
+		int st=(i*5+(int)(roadOff/18))%7;
+		drawBuilding(-3.5f,z,st);
+		drawBuilding(3.5f,z,st+2);
 	}
 
-	/* buildings left / right */
-	if(buildOk){
-		float base = fmodf(roadOff * 0.05f, 3.0f);
-		for(int i=0;i<8;i++){
-			float z = -2.0f - i*3.0f + base;
-			drawMesh(&buildMesh, 0.f, -3.2f - lane*0.1f, -0.8f, z, 1.8f, 1.8f, 1.8f);
-			drawMesh(&buildMesh, PI,  3.2f - lane*0.1f, -0.8f, z, 1.8f, 1.8f, 1.8f);
-		}
+	for(int i=20;i>=0;i--){
+		float z1=1.0f+i*2.5f, z2=1.0f+(i+1)*2.5f;
+		float x1l,y1,s1,x1r,x2l,y2,s2,x2r;
+		proj(-2.6f,z1,&x1l,&y1,&s1); proj(2.6f,z1,&x1r,&y1,&s1);
+		proj(-2.6f,z2,&x2l,&y2,&s2); proj(2.6f,z2,&x2r,&y2,&s2);
+		float midY=(y1+y2)*0.5f, hh=fabsf(y2-y1)+2.f;
+		float L=(x1l+x2l)*0.5f, RR=(x1r+x2r)*0.5f;
+		if(RR<=L) continue;
+		u32 col=((i+(int)(roadOff/12))&1)?C2D_Color32(70,70,80,255):C2D_Color32(50,50,60,255);
+		rect(L,midY-hh*0.5f,RR-L,hh,col);
+		if(((i+(int)(roadOff/8))&1)==0)
+			rect(TOP_W*0.5f-4,midY-hh*0.3f,8,hh*0.45f,C2D_Color32(255,220,30,255));
+		rect(L,midY-hh*0.5f,6,hh,C2D_Color32(240,240,240,255));
+		rect(RR-6,midY-hh*0.5f,6,hh,C2D_Color32(240,240,240,255));
 	}
 
-	/* traffic cars (same mesh, different positions) */
-	if(meshOk){
-		for(int i=0;i<MAX_OBS;i++) if(obs[i].on && obs[i].z<80.f){
-			float rel = obs[i].lane - lane;
-			float wx = rel * 1.15f;
-			float wz = -2.5f - obs[i].z * 0.12f;
-			float sc = 0.25f + 0.35f / (1.f + obs[i].z * 0.03f);
-			drawMesh(&carMesh, PI, wx, -1.0f, wz, sc, sc, sc);
-		}
-		/* player hood */
-		float yaw = steerV * 0.02f + yawRate * 0.12f;
-		if(crashStun>0.f) yaw += spinVel * 0.2f;
-		drawMesh(&carMesh, yaw, lane*0.1f, -1.85f, -2.9f, 0.4f, 0.4f, 0.4f);
+	/* traffic always as visible 2D cars */
+	for(int i=0;i<MAX_OBS;i++) if(obs[i].on){
+		float sx,sy,sc;
+		proj(obs[i].lane-lane*0.3f,obs[i].z,&sx,&sy,&sc);
+		float w=sc*0.9f,h=sc*0.7f;
+		u32 body=C2D_Color32(30,100,210,255);
+		if(i%3==1) body=C2D_Color32(210,40,40,255);
+		if(i%3==2) body=C2D_Color32(40,170,70,255);
+		rect(sx-w*0.5f,sy-h,w,h,body);
+		rect(sx-w*0.3f,sy-h*0.85f,w*0.6f,h*0.3f,C2D_Color32(20,30,50,255));
 	}
 
-	C2D_Prepare();
+	/* player hood */
+	{
+		float px=TOP_W*0.5f+lane*18.f;
+		rect(px-80,TOP_H-45,160,45,C2D_Color32(25,25,32,255));
+		rect(px-65,TOP_H-58,130,16,C2D_Color32(190,35,40,255));
+	}
 
-	/* bottom HUD only (not top 2D road) */
+	if(crashStun>0.f)
+		rect(0,0,TOP_W,TOP_H,C2D_Color32(200,10,10,100));
+
+	/* 3D car models on top when available */
+	if(shaderOk && meshOk){
+		C2D_Flush();
+		C3D_FrameDrawOn(top);
+		C3D_RenderTargetClear(top, C3D_CLEAR_DEPTH, 0, 0);
+		for(int i=0;i<MAX_OBS;i++) if(obs[i].on && obs[i].z<60.f){
+			float rel=obs[i].lane-lane;
+			float wx=rel*1.1f;
+			float wz=-3.0f-obs[i].z*0.13f;
+			float sc=0.2f+0.35f/(1.f+obs[i].z*0.04f);
+			drawCar3D(PI, wx, -0.7f, wz, sc);
+		}
+		float yaw=steerV*0.018f;
+		if(crashStun>0.f) yaw+=spinVel*0.2f;
+		drawCar3D(yaw, 0.f, -1.8f, -3.0f, 0.38f);
+		C2D_Prepare();
+	}
+
 	C2D_TargetClear(bot,C2D_Color32(16,16,26,255)); C2D_SceneBegin(bot);
 	float p=dist/target; if(p>1)p=1;
 	rect(12,10,296,15,C2D_Color32(35,35,50,255));
@@ -291,7 +347,7 @@ static void drawDrive(){
 }
 
 static void drawResult(){
-	C2D_TargetClear(top,C2D_Color32(12,14,32,255)); C2D_SceneBegin(top);
+	C2D_TargetClear(top,C2D_Color32(15,18,40,255)); C2D_SceneBegin(top);
 	rect(45,45,310,130,C2D_Color32(35,38,65,255));
 	char buf[48]; snprintf(buf,sizeof(buf),"REWARD  $%d",score);
 	text(95,90,0.95f,C2D_Color32(90,255,140,255),buf);
@@ -304,8 +360,6 @@ int main(int argc,char** argv){
 	(void)argc;(void)argv;
 	srand((unsigned)osGetTime());
 	memset(&carMesh,0,sizeof(carMesh));
-	memset(&roadMesh,0,sizeof(roadMesh));
-	memset(&buildMesh,0,sizeof(buildMesh));
 	gfxInitDefault();
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 	C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
@@ -313,7 +367,6 @@ int main(int argc,char** argv){
 	top=C2D_CreateScreenTarget(GFX_TOP,GFX_LEFT);
 	bot=C2D_CreateScreenTarget(GFX_BOTTOM,GFX_LEFT);
 	romfsInit(); initFont();
-	loadCity();
 	bool run=true; u64 last=osGetTime();
 	while(aptMainLoop()&&run){
 		u64 now=osGetTime();
@@ -323,7 +376,7 @@ int main(int argc,char** argv){
 		switch(state){
 		case ST_MENU:
 			drawMenu();
-			if(k&KEY_A){ loadCar(carSelect); loadCity(); resetDrive(); state=ST_DRIVE; }
+			if(k&KEY_A){ loadCar(carSelect); resetDrive(); state=ST_DRIVE; }
 			if(k&KEY_X){ loadCar(carSelect); carAngle=0; state=ST_GARAGE; }
 			if(k&KEY_START) run=false;
 			break;
@@ -343,7 +396,7 @@ int main(int argc,char** argv){
 		}
 		C3D_FrameEnd(0);
 	}
-	meshFree(&carMesh); meshFree(&roadMesh); meshFree(&buildMesh);
+	meshFree(&carMesh);
 	if(shaderOk){ shaderProgramFree(&program); if(vshader_dvlb) DVLB_Free(vshader_dvlb); }
 	if(font) C2D_FontFree(font);
 	C2D_TextBufDelete(sbuf); C2D_TextBufDelete(dbuf);
