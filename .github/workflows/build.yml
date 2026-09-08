@@ -13,12 +13,11 @@ jobs:
     container:
       image: devkitpro/devkitarm
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
     - name: Ensure resources and romfs
       run: |
-        mkdir -p resources romfs/cars romfs/gfx romfs/sfx romfs/city
+        mkdir -p resources romfs/cars romfs/city romfs/gfx romfs/sfx
         apt-get update -qq && apt-get install -y -qq imagemagick 2>/dev/null || true
         if [ ! -f resources/banner.png ]; then
           convert -size 256x128 xc:'#c1121f' -fill white -gravity center -pointsize 24 -annotate 0 'TEMU DRIVER' resources/banner.png || true
@@ -31,33 +30,21 @@ jobs:
         if [ ! -f resources/banner.wav ]; then
           python3 -c "import wave; w=wave.open('resources/banner.wav','w'); w.setnchannels(2); w.setsampwidth(2); w.setframerate(44100); w.writeframes(b'\\x00'*(44100*2*2)); w.close()"
         fi
-        if [ -d assets/cars ]; then
-          cp -f assets/cars/*.obj romfs/cars/ || true
-          cp -f assets/cars/*.png romfs/cars/ 2>/dev/null || true
-        fi
-        if [ -d assets/city ]; then
-          cp -f assets/city/*.obj romfs/city/ 2>/dev/null || true
-          cp -f assets/city/*.mtl romfs/city/ 2>/dev/null || true
-          echo "City assets:"
-          ls -la romfs/city/ || true
-        fi
+        cp -f assets/cars/*.obj romfs/cars/ 2>/dev/null || true
+        cp -f assets/cars/*.png romfs/cars/ 2>/dev/null || true
+        cp -f assets/city/*.obj romfs/city/ 2>/dev/null || true
+        ls -la romfs/cars romfs/city || true
 
     - name: Build BannerTool
       run: |
         git clone https://github.com/carstene1ns/3ds-bannertool.git
-        cd 3ds-bannertool
-        cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo
-        cmake --build build
-        cmake --install build
+        cd 3ds-bannertool && cmake -B build && cmake --build build && cmake --install build
 
     - name: Build Makerom
       run: |
         git clone --recursive https://github.com/3DSGuy/Project_CTR
-        cd Project_CTR/makerom
-        make deps
-        make
-        cp ./bin/makerom /usr/local/bin/makerom
-        chmod +x /usr/local/bin/makerom
+        cd Project_CTR/makerom && make deps && make
+        cp ./bin/makerom /usr/local/bin/makerom && chmod +x /usr/local/bin/makerom
 
     - name: Build 3DSX and CIA
       run: |
@@ -71,20 +58,21 @@ jobs:
         make cia
         ls -la *.3dsx *.cia *.elf 2>/dev/null || true
 
-    - name: Upload build artifacts
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: TemuDriver3DS
+        name: TemuDriver3DS-v1
         path: |
           ./*.cia
           ./*.3dsx
 
-    - name: Create/update GitHub Release
-      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    - name: Release v1.0.0
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: v${{ github.run_number }}
-        name: "TemuDriver3DS Build ${{ github.run_number }}"
+        tag_name: v1.0.0
+        name: "TemuDriver3DS v1.0.0"
+        body: "First official release — real 3D models in garage and drive. Hold A to accelerate."
         files: |
           ./*.cia
           ./*.3dsx
