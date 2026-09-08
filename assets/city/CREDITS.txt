@@ -1,4 +1,4 @@
-Kenney City Kit (Roads)
-https://kenney.nl / https://opengameart.org/content/city-kit-roads
-License: CC0 1.0 (public domain)
+Kenney.nl assets (CC0)
+- City Kit Roads: https://kenney.nl/assets/city-kit-roads
+- City Kit Commercial: https://kenney.nl/assets/city-kit-commercial
 Credit optional: Kenney.nl
