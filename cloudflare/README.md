@@ -1,40 +1,30 @@
-# TemuDriver3DS Chat (Cloudflare Worker)
+# TemuDriver3DS SpotPass News
 
-Login + messages for the game. **Does not touch FoxWebChat.**
+**Kein Chat.** Du schreibst Mitteilungen (News), das Spiel holt sie ab.
 
-## Setup
+## iPad Setup (Cloudflare Dashboard)
 
-```bash
-cd cloudflare
-npm i -g wrangler
-wrangler login
+1. [dash.cloudflare.com](https://dash.cloudflare.com) → **Workers & Pages** → **Create Worker**
+2. Name: `temu-driver-news` → Deploy → **Edit code**
+3. Code aus `worker.js` einfügen → **Save and deploy**
+4. **Settings → Variables** → Secret hinzufügen:
+   - Name: `ADMIN_TOKEN`
+   - Wert: irgendein langes Passwort (nur für dich)
+5. **Settings → Bindings** → KV Namespace:
+   - Variable name: `NEWS`
+   - Namespace neu erstellen
 
-wrangler kv namespace create USERS
-wrangler kv namespace create MESSAGES
-wrangler kv namespace create USERS --preview
-wrangler kv namespace create MESSAGES --preview
-```
+## Nutzen
 
-Paste the IDs into `wrangler.toml`, then:
-
-```bash
-wrangler deploy
-```
-
-You get a URL like: `https://temu-driver-chat.<you>.workers.dev`
+- News lesen (Spiel / Browser): `GET https://DEINE-URL.workers.dev/news`
+- News schreiben (nur du): Admin-Seite öffnen:
+  `https://DEINE-URL.workers.dev/admin`
+  → Admin-Token + Titel + Text → Senden
 
 ## API
 
-| Method | Path | Auth | Body |
-|--------|------|------|------|
-| POST | `/register` | no | `{ "username", "password" }` → `{ token }` |
-| POST | `/login` | no | `{ "username", "password" }` → `{ token }` |
-| POST | `/message` | Bearer token | `{ "text": "hello" }` |
-| GET | `/messages` | Bearer token | recent messages |
-| GET | `/me` | Bearer token | current user |
-
-Username: `a-z 0-9 _`, 3–16 chars.
-
-## From 3DS later
-
-HTTP POST/GET to this Worker URL from the game menu.
+| Wer | Methode | Pfad |
+|-----|---------|------|
+| Alle | GET | `/news` |
+| Du | POST | `/news` + Header `X-Admin-Token` |
+| Du | Browser | `/admin` |

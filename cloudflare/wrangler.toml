@@ -1,19 +1,12 @@
-name = "temu-driver-chat"
+name = "temu-driver-news"
 main = "worker.js"
 compatibility_date = "2024-11-01"
 
-# Create KV namespaces then put the IDs here:
-#   wrangler kv namespace create USERS
-#   wrangler kv namespace create MESSAGES
-#   wrangler kv namespace create USERS --preview
-#   wrangler kv namespace create MESSAGES --preview
-
+# KV: wrangler kv namespace create NEWS
 [[kv_namespaces]]
-binding = "USERS"
-id = "REPLACE_USERS_KV_ID"
-preview_id = "REPLACE_USERS_KV_PREVIEW_ID"
+binding = "NEWS"
+id = "REPLACE_NEWS_KV_ID"
+preview_id = "REPLACE_NEWS_KV_PREVIEW_ID"
 
-[[kv_namespaces]]
-binding = "MESSAGES"
-id = "REPLACE_MESSAGES_KV_ID"
-preview_id = "REPLACE_MESSAGES_KV_PREVIEW_ID"
+# Set secret after deploy:
+#   wrangler secret put ADMIN_TOKEN
