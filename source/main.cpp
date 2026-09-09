@@ -16,7 +16,7 @@
 #define DEG2RAD (PI/180.f)
 #define MAX_STEER_DEG 25.f
 #define SAVE_PATH "sdmc:/TemuDriver3DS.sav"
-#define SAVE_MAGIC 0x54444D31u /* TDM1 */
+#define SAVE_MAGIC 0x54444D31u
 
 enum State { ST_SPLASH, ST_MENU, ST_GARAGE, ST_SHOP, ST_DRIVE, ST_RESULT, ST_GAMEOVER };
 
@@ -27,9 +27,9 @@ static C2D_Font font = NULL;
 
 static float lane = 0, speed = 0, steerV = 0, yawRate = 0, carAngle = 0;
 static float crashStun = 0, spinVel = 0;
-static float rpm = 0.f; /* 0..1 for over-rev */
+static float rpm = 0.f;
 static bool drift = false, boost = false, overRev = false;
-static int money = 1500, level = 1, crash = 0, score = 0;
+static int money = 350, level = 1, crash = 0, score = 0;
 static float dist = 0, target = 2200, timeL = 60, roadOff = 0;
 static int carSelect = 0;
 static int gear = 1;
@@ -37,24 +37,17 @@ static bool gearDrag = false;
 static float gearKnobY = 200.f;
 static float splashT = 0.f;
 
-/* unlocks */
 static bool unlocked[NUM_CARS] = { true, false, false, false, false, false };
-static bool ownDrift = false; /* drift is a bought skill */
+static bool ownDrift = false;
 static const int carPrice[NUM_CARS] = { 0, 800, 1200, 1500, 2000, 3500 };
 static const int DRIFT_PRICE = 500;
-static const int CRASH_FINE = 80;
+static const int CRASH_FINE = 40;
 
-/* per-car features: maxGear, powerMul, gripMul, hasTurbo (auto) */
 static const int carMaxGear[NUM_CARS] = { 5, 4, 5, 4, 6, 6 };
 static const float carPower[NUM_CARS] = { 1.0f, 0.85f, 1.15f, 0.95f, 1.25f, 1.4f };
 static const float carGrip[NUM_CARS]  = { 1.0f, 0.9f, 1.1f, 1.2f, 1.15f, 0.95f };
 static const char* carFeat[NUM_CARS] = {
-	"Balanced",
-	"Cargo +$ bonus",
-	"Police grip+",
-	"Offroad grip++",
-	"Rally 6 gears",
-	"Lamb power++"
+	"Balanced","Cargo +$ bonus","Police grip+","Offroad grip++","Rally 6 gears","Lamb power++"
 };
 
 static const float gearMax[7] = { 0.f, 2.5f, 4.0f, 5.5f, 7.0f, 9.0f, 11.5f };
@@ -93,29 +86,22 @@ struct SaveData {
 };
 
 static void saveGame(void){
-	SaveData s;
-	memset(&s, 0, sizeof(s));
-	s.magic = SAVE_MAGIC;
-	s.money = money; s.level = level; s.carSelect = carSelect;
+	SaveData s; memset(&s, 0, sizeof(s));
+	s.magic = SAVE_MAGIC; s.money = money; s.level = level; s.carSelect = carSelect;
 	for(int i=0;i<NUM_CARS;i++) s.unlocked[i] = unlocked[i] ? 1 : 0;
 	s.ownDrift = ownDrift ? 1 : 0;
-	FILE* f = fopen(SAVE_PATH, "wb");
-	if(!f) return;
-	fwrite(&s, sizeof(s), 1, f);
-	fclose(f);
+	FILE* f = fopen(SAVE_PATH, "wb"); if(!f) return;
+	fwrite(&s, sizeof(s), 1, f); fclose(f);
 }
 static void loadGame(void){
-	FILE* f = fopen(SAVE_PATH, "rb");
-	if(!f) return;
+	FILE* f = fopen(SAVE_PATH, "rb"); if(!f) return;
 	SaveData s;
 	if(fread(&s, sizeof(s), 1, f) == 1 && s.magic == SAVE_MAGIC){
 		money = s.money; if(money < 0) money = 0;
 		level = s.level; if(level < 1) level = 1;
-		carSelect = s.carSelect;
-		if(carSelect < 0 || carSelect >= NUM_CARS) carSelect = 0;
+		carSelect = s.carSelect; if(carSelect < 0 || carSelect >= NUM_CARS) carSelect = 0;
 		for(int i=0;i<NUM_CARS;i++) unlocked[i] = s.unlocked[i] != 0;
-		unlocked[0] = true;
-		ownDrift = s.ownDrift != 0;
+		unlocked[0] = true; ownDrift = s.ownDrift != 0;
 	}
 	fclose(f);
 }
@@ -148,10 +134,8 @@ static void initSound(){
 	if(!audioBuf) return;
 	memset(audioBuf, 0, samples * sizeof(s16));
 	memset(&waveBuf, 0, sizeof(waveBuf));
-	waveBuf.data_vaddr = audioBuf;
-	waveBuf.nsamples = samples;
-	ndspChnWaveBufAdd(0, &waveBuf);
-	soundOk = true;
+	waveBuf.data_vaddr = audioBuf; waveBuf.nsamples = samples;
+	ndspChnWaveBufAdd(0, &waveBuf); soundOk = true;
 }
 static void updateEngineSound(float spd, bool gas, bool over){
 	if(!soundOk || !audioBuf) return;
@@ -172,11 +156,7 @@ static void updateEngineSound(float spd, bool gas, bool over){
 	ndspChnWaveBufAdd(0, &waveBuf);
 }
 static void exitSound(){
-	if(soundOk){
-		ndspChnWaveBufClear(0);
-		if(audioBuf) linearFree(audioBuf);
-		audioBuf = NULL; ndspExit(); soundOk = false;
-	}
+	if(soundOk){ ndspChnWaveBufClear(0); if(audioBuf) linearFree(audioBuf); audioBuf=NULL; ndspExit(); soundOk=false; }
 }
 static bool initShaderOnce(){
 	if(shaderInited) return shaderOk;
@@ -206,19 +186,14 @@ static void loadWorldMeshes(){
 static void drawMesh3D(Mesh* m, float angleY, float px, float py, float pz, float sx, float sy, float sz){
 	if(!shaderOk || !m || !m->loaded) return;
 	C3D_BindProgram(&program);
-	C3D_AttrInfo* attr = C3D_GetAttrInfo();
-	AttrInfo_Init(attr);
-	AttrInfo_AddLoader(attr, 0, GPU_FLOAT, 3);
-	AttrInfo_AddLoader(attr, 1, GPU_FLOAT, 4);
-	C3D_BufInfo* buf = C3D_GetBufInfo();
-	BufInfo_Init(buf);
+	C3D_AttrInfo* attr = C3D_GetAttrInfo(); AttrInfo_Init(attr);
+	AttrInfo_AddLoader(attr, 0, GPU_FLOAT, 3); AttrInfo_AddLoader(attr, 1, GPU_FLOAT, 4);
+	C3D_BufInfo* buf = C3D_GetBufInfo(); BufInfo_Init(buf);
 	BufInfo_Add(buf, m->vbo, sizeof(MeshVertex), 2, 0x10);
-	C3D_TexEnv* env = C3D_GetTexEnv(0);
-	C3D_TexEnvInit(env);
+	C3D_TexEnv* env = C3D_GetTexEnv(0); C3D_TexEnvInit(env);
 	C3D_TexEnvSrc(env, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
 	C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
-	C3D_CullFace(GPU_CULL_NONE);
-	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+	C3D_CullFace(GPU_CULL_NONE); C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
 	C3D_Mtx projection, modelView;
 	Mtx_PerspTilt(&projection, C3D_AngleFromDegrees(55.0f), 400.0f/240.0f, 0.2f, 100.0f, false);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_projection, &projection);
@@ -239,10 +214,13 @@ static void resetDrive(){
 	for(int i=0;i<MAX_OBS;i++) obs[i].on=false;
 }
 static void spawnObs(){
+	int active=0;
+	for(int i=0;i<MAX_OBS;i++) if(obs[i].on) active++;
+	if(active >= 3) return;
 	for(int i=0;i<MAX_OBS;i++) if(!obs[i].on){
-		obs[i].on=true; obs[i].z=50+(rand()%40);
+		obs[i].on=true; obs[i].z=55+(rand()%45);
 		obs[i].lane=(float)((rand()%5)-2);
-		obs[i].spd=0.4f+(rand()%30)/100.f; break;
+		obs[i].spd=0.3f+(rand()%25)/100.f; break;
 	}
 }
 static float gearYFromNum(int g){ return 210.f - (float)(g - 1) * (100.f / 5.f); }
@@ -269,15 +247,10 @@ static void handleGearTouch(){
 		gearKnobY = gearYFromNum(gear);
 	}
 }
-
 static void doCrashFine(void){
-	money -= CRASH_FINE;
-	if(money < 0) money = 0;
+	money -= CRASH_FINE; if(money < 0) money = 0;
 	saveGame();
-	if(money <= 0){
-		score = 0;
-		state = ST_GAMEOVER;
-	}
+	if(money <= 0){ score = 0; state = ST_GAMEOVER; }
 }
 
 static void updateDrive(float dt){
@@ -296,7 +269,7 @@ static void updateDrive(float dt){
 		updateEngineSound(speed, false, false);
 		for(int i=0;i<MAX_OBS;i++) if(obs[i].on){ obs[i].z-=3.f*dt; if(obs[i].z<1.f) obs[i].on=false; }
 		if(timeL<=0||crash>=6){
-			int r=10-crash*5; if(r<0)r=0; money+=r; score=r; saveGame();
+			int r=3-crash*2; if(r<0)r=0; money+=r; score=r; saveGame();
 			state = (money<=0) ? ST_GAMEOVER : ST_RESULT;
 		}
 		if(d&KEY_START){ saveGame(); state=ST_MENU; }
@@ -304,7 +277,6 @@ static void updateDrive(float dt){
 	}
 
 	boost = (h & (KEY_A | KEY_R)) != 0;
-	/* drift only if bought */
 	drift = ownDrift && ((h & (KEY_Y | KEY_L)) != 0) && fabsf(stick) > 0.2f && speed > 2.0f;
 	bool braking = (h & KEY_B) != 0;
 
@@ -313,16 +285,10 @@ static void updateDrive(float dt){
 	float maxS = gearMax[gear] * carPower[carSelect];
 	float acc = gearAcc[gear] * carPower[carSelect];
 
-	/* RPM / over-rev: speed relative to gear max */
 	rpm = (maxS > 0.1f) ? (speed / maxS) : 0.f;
 	if(rpm > 1.f) rpm = 1.f;
 	overRev = boost && rpm > 0.92f && gear < maxG;
-	if(overRev){
-		/* power loss + shake when over-revving in low gear */
-		acc *= 0.35f;
-		speed -= 2.5f * dt;
-		lane += ((rand()%3)-1) * 0.4f * dt;
-	}
+	if(overRev){ acc *= 0.35f; speed -= 2.5f * dt; lane += ((rand()%3)-1) * 0.4f * dt; }
 
 	float force = 0.f;
 	if(boost) force += acc;
@@ -333,48 +299,47 @@ static void updateDrive(float dt){
 	if(speed > maxS * 1.05f) speed = maxS * 1.05f;
 	if(speed < 0.f) speed = 0.f;
 
+	/* steer where you point — car goes that direction */
 	float targetSteerDeg = stick * MAX_STEER_DEG;
-	steerV += (targetSteerDeg - steerV) * 10.f * dt;
+	steerV += (targetSteerDeg - steerV) * 12.f * dt;
 	if(steerV > MAX_STEER_DEG) steerV = MAX_STEER_DEG;
 	if(steerV < -MAX_STEER_DEG) steerV = -MAX_STEER_DEG;
 
-	float grip = (drift ? 0.28f : 1.0f) * carGrip[carSelect];
-	float steerRad = steerV * DEG2RAD;
-	float turnRate = steerRad * (0.8f + speed * 0.35f) * grip;
-	yawRate += (turnRate - yawRate) * 8.f * dt;
-	float lat = yawRate * dt * (drift ? 2.2f : 1.0f);
-	lane += lat;
-	if(lane < -2.1f){ lane = -2.1f; yawRate *= -0.4f; }
-	if(lane >  2.1f){ lane =  2.1f; yawRate *= -0.4f; }
+	float grip = (drift ? 0.32f : 1.0f) * carGrip[carSelect];
+	float move = stick * (0.55f + speed * 0.55f) * grip;
+	if(drift) move *= 1.6f;
+	lane += move * dt;
+	yawRate = stick * speed * 0.15f * grip;
+	if(lane < -2.1f) lane = -2.1f;
+	if(lane >  2.1f) lane =  2.1f;
 
-	/* Van cargo bonus distance payout later via level */
 	float distMul = (carSelect == 1) ? 1.15f : 1.0f;
 	dist += speed * 18.f * dt * distMul;
 	timeL -= dt; roadOff += speed * 20.f * dt;
 	updateEngineSound(speed, boost, overRev);
 
 	static float timer = 0; timer += dt;
-	if(timer > 0.9f){ spawnObs(); timer = 0; }
+	if(timer > 2.8f){ spawnObs(); timer = 0; }
 
 	for(int i=0;i<MAX_OBS;i++) if(obs[i].on){
 		obs[i].z -= (speed + obs[i].spd + 0.8f) * 12.f * dt;
 		if(obs[i].z < 12.f && obs[i].z > 2.f && fabsf(obs[i].lane - lane) < 0.85f){
-			crash++;
-			crashStun = 1.6f + crash * 0.2f;
+			crash++; crashStun = 1.6f + crash * 0.2f;
 			spinVel = (obs[i].lane > lane) ? -3.2f : 3.2f;
 			speed *= 0.12f; yawRate = spinVel; obs[i].on = false;
-			doCrashFine(); /* pay on crash */
+			doCrashFine();
 			if(state == ST_GAMEOVER) return;
 			break;
 		}
 		if(obs[i].z < 1.5f) obs[i].on = false;
 	}
 	if(dist >= target){
-		int r = (int)(220 + level * 90 + fmaxf(0, timeL) * 7 - crash * 50);
-		if(carSelect == 1) r = (int)(r * 1.2f); /* van bonus */
-		if(r < 50) r = 50; money += r; score = r; saveGame(); state = ST_RESULT;
+		/* Temu wages: low pay */
+		int r = (int)(45 + level * 18 + fmaxf(0, timeL) * 1.5f - crash * 15);
+		if(carSelect == 1) r = (int)(r * 1.15f);
+		if(r < 12) r = 12; money += r; score = r; saveGame(); state = ST_RESULT;
 	} else if(timeL <= 0 || crash >= 6){
-		int r = 10 - crash * 5; if(r < 0) r = 0; money += r; score = r; saveGame();
+		int r = 3 - crash * 2; if(r < 0) r = 0; money += r; score = r; saveGame();
 		state = (money <= 0) ? ST_GAMEOVER : ST_RESULT;
 	}
 	if(d & KEY_START){ saveGame(); state = ST_MENU; }
@@ -392,7 +357,7 @@ static void drawMenu(){
 	C2D_TargetClear(top,C2D_Color32(15,18,40,255)); C2D_SceneBegin(top);
 	rect(0,0,TOP_W,90,C2D_Color32(190,28,38,255));
 	text(55,25,1.05f,C2D_Color32(255,255,255,255),"TEMU DRIVER");
-	text(100,58,0.5f,C2D_Color32(255,210,210,255),"v1.0 SAVE");
+	text(85,58,0.5f,C2D_Color32(255,210,210,255),"LOW PAY  LONG HOURS");
 	C2D_TargetClear(bot,C2D_Color32(22,24,40,255)); C2D_SceneBegin(bot);
 	rect(22,12,276,42,C2D_Color32(35,115,220,255));
 	text(50,22,0.65f,C2D_Color32(255,255,255,255),"A  START");
@@ -488,7 +453,6 @@ static void drawDrive(){
 	float p = dist/target; if(p>1)p=1;
 	rect(12,6,190,10,C2D_Color32(35,35,50,255));
 	rect(12,6,190*p,10,C2D_Color32(35,200,90,255));
-	/* RPM bar */
 	rect(12,20,190,8,C2D_Color32(35,35,50,255));
 	rect(12,20,190*rpm,8, overRev ? C2D_Color32(255,40,40,255) : C2D_Color32(40,180,255,255));
 	char buf[64];
@@ -521,8 +485,9 @@ static void drawDrive(){
 static void drawResult(){
 	C2D_TargetClear(top,C2D_Color32(15,18,40,255)); C2D_SceneBegin(top);
 	rect(45,45,310,130,C2D_Color32(35,38,65,255));
-	char buf[48]; snprintf(buf,sizeof(buf),"REWARD  $%d",score);
-	text(95,90,0.95f,C2D_Color32(90,255,140,255),buf);
+	char buf[48]; snprintf(buf,sizeof(buf),"PAY  $%d",score);
+	text(110,90,0.95f,C2D_Color32(90,255,140,255),buf);
+	text(80,140,0.45f,C2D_Color32(200,200,210,255),"Temu rate...");
 	C2D_TargetClear(bot,C2D_Color32(22,24,40,255)); C2D_SceneBegin(bot);
 	rect(22,88,276,55,C2D_Color32(35,145,75,255));
 	text(65,102,0.75f,C2D_Color32(255,255,255,255),"A  CONTINUE");
@@ -530,10 +495,10 @@ static void drawResult(){
 static void drawGameOver(){
 	C2D_TargetClear(top,C2D_Color32(40,10,10,255)); C2D_SceneBegin(top);
 	text(90,90,1.0f,C2D_Color32(255,60,60,255),"GAME OVER");
-	text(70,140,0.5f,C2D_Color32(255,200,200,255),"No money left!");
+	text(50,140,0.45f,C2D_Color32(255,200,200,255),"Broke. Temu life.");
 	C2D_TargetClear(bot,C2D_Color32(30,15,15,255)); C2D_SceneBegin(bot);
 	rect(22,80,276,55,C2D_Color32(100,40,40,255));
-	text(50,95,0.6f,C2D_Color32(255,255,255,255),"A  RETRY $500");
+	text(40,95,0.55f,C2D_Color32(255,255,255,255),"A  RETRY $200");
 }
 
 int main(int argc, char** argv){
@@ -598,11 +563,7 @@ int main(int argc, char** argv){
 			break;
 		case ST_GAMEOVER:
 			drawGameOver();
-			if(k&KEY_A){
-				money = 500; crash=0; level=1;
-				/* keep cars/drift unlocks */
-				saveGame(); state=ST_MENU;
-			}
+			if(k&KEY_A){ money = 200; crash=0; level=1; saveGame(); state=ST_MENU; }
 			break;
 		}
 		C3D_FrameEnd(0);
