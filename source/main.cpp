@@ -27,6 +27,13 @@ static bool drift = false, boost = false;
 static int money = 1500, level = 1, crash = 0, score = 0;
 static float dist = 0, target = 2200, timeL = 60, roadOff = 0;
 static int carSelect = 0;
+static int gear = 1;           /* 1..6 */
+static bool gearDrag = false;
+static float gearKnobY = 0;    /* touch position on shifter */
+
+/* max speed per gear (internal units) */
+static const float gearMax[7] = { 0.f, 2.5f, 4.0f, 5.5f, 7.0f, 9.0f, 11.5f };
+static const float gearAcc[7] = { 0.f, 14.f, 11.f, 9.f, 7.5f, 6.f, 5.f };
 
 static const char* carFiles[] = {
 	"romfs:/cars/coupe.obj","romfs:/cars/van.obj","romfs:/cars/police.obj",
@@ -74,25 +81,21 @@ static bool initShaderOnce(){
 	uLoc_modelView=shaderInstanceGetUniformLocation(program.vertexShader,"modelView");
 	shaderOk=true; return true;
 }
-
 static void loadCar(int idx){
 	if(idx<0||idx>=NUM_CARS) return;
 	carSelect=idx; meshFree(&carMesh); meshOk=false;
 	if(!initShaderOnce()) return;
 	meshOk=meshLoadOBJ(carFiles[idx],&carMesh,carColors[idx][0],carColors[idx][1],carColors[idx][2]);
 }
-
 static void loadWorldMeshes(){
 	if(!initShaderOnce()) return;
 	meshFree(&groundMesh); meshFree(&buildMesh);
-	/* road from Kenney, fallback big gray cube strip */
 	groundOk = meshLoadOBJ("romfs:/city/road-straight.obj", &groundMesh, 0.4f, 0.4f, 0.45f);
 	if(!groundOk) groundOk = meshLoadCube(&groundMesh, 0.35f, 0.35f, 0.4f);
 	buildOk = meshLoadOBJ("romfs:/city/low-detail-building-d.obj", &buildMesh, 0.75f, 0.5f, 0.35f);
 	if(!buildOk) buildOk = meshLoadCube(&buildMesh, 0.7f, 0.45f, 0.35f);
 }
 
-/* draw any mesh in 3D - shared path */
 static void drawMesh3D(Mesh* m, float angleY, float px, float py, float pz, float sx, float sy, float sz){
 	if(!shaderOk || !m || !m->loaded) return;
 	C3D_BindProgram(&program);
@@ -109,11 +112,9 @@ static void drawMesh3D(Mesh* m, float angleY, float px, float py, float pz, floa
 	C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
 	C3D_CullFace(GPU_CULL_NONE);
 	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
-
 	C3D_Mtx projection, modelView;
 	Mtx_PerspTilt(&projection, C3D_AngleFromDegrees(55.0f), 400.0f/240.0f, 0.2f, 100.0f, false);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_projection, &projection);
-
 	Mtx_Identity(&modelView);
 	Mtx_Translate(&modelView, px, py, pz, true);
 	Mtx_RotateY(&modelView, angleY, true);
@@ -125,6 +126,7 @@ static void drawMesh3D(Mesh* m, float angleY, float px, float py, float pz, floa
 static void resetDrive(){
 	lane=0; speed=0.f; steerV=0; yawRate=0;
 	drift=boost=false; crashStun=0; spinVel=0;
+	gear=1; gearDrag=false; gearKnobY=200.f;
 	dist=0; crash=0; score=0; roadOff=0;
 	target=1800.f+level*400.f; timeL=55.f+level*8.f;
 	for(int i=0;i<MAX_OBS;i++) obs[i].on=false;
@@ -137,12 +139,47 @@ static void spawnObs(){
 	}
 }
 
+/* gear Y positions on bottom screen (1 at bottom, 6 at top of rail) */
+static float gearYFromNum(int g){
+	/* rail from y=110 (gear6) to y=210 (gear1) */
+	return 210.f - (float)(g - 1) * (100.f / 5.f);
+}
+static int gearFromY(float y){
+	int g = 1 + (int)((210.f - y) / (100.f / 5.f) + 0.5f);
+	if(g < 1) g = 1;
+	if(g > 6) g = 6;
+	return g;
+}
+
+static void handleGearTouch(){
+	touchPosition t; hidTouchRead(&t);
+	u32 h = hidKeysHeld();
+	u32 d = hidKeysDown();
+	u32 u = hidKeysUp();
+	/* shifter box roughly x=250..310, y=100..220 */
+	if(d & KEY_TOUCH){
+		if(t.px >= 245 && t.px <= 315 && t.py >= 100 && t.py <= 220)
+			gearDrag = true;
+	}
+	if(u & KEY_TOUCH) gearDrag = false;
+	if(gearDrag && (h & KEY_TOUCH)){
+		gearKnobY = (float)t.py;
+		if(gearKnobY < 110.f) gearKnobY = 110.f;
+		if(gearKnobY > 210.f) gearKnobY = 210.f;
+		gear = gearFromY(gearKnobY);
+	} else {
+		gearKnobY = gearYFromNum(gear);
+	}
+}
+
 static void updateDrive(float dt){
 	hidScanInput();
 	u32 h=hidKeysHeld(); u32 d=hidKeysDown();
 	circlePosition c; hidCircleRead(&c);
 	float stick=c.dx/155.f;
 	if(stick>1.f) stick=1.f; if(stick<-1.f) stick=-1.f;
+
+	handleGearTouch();
 
 	if(crashStun>0.f){
 		crashStun-=dt;
@@ -157,50 +194,58 @@ static void updateDrive(float dt){
 		return;
 	}
 
-	boost=(h&(KEY_A|KEY_R))!=0;
-	drift=((h&(KEY_Y|KEY_L))!=0)&&fabsf(stick)>0.12f;
-	bool braking=(h&KEY_B)!=0;
+	boost = (h & (KEY_A | KEY_R)) != 0;
+	drift = ((h & (KEY_Y | KEY_L)) != 0) && fabsf(stick) > 0.15f && speed > 1.5f;
+	bool braking = (h & KEY_B) != 0;
 
-	if(boost) speed += 9.0f * dt;
-	else speed -= 5.0f * dt;
-	if(braking) speed -= 12.0f * dt;
-	if(speed<0.f) speed=0.f;
-	if(speed>11.f) speed=11.f;
+	/* gear-limited acceleration */
+	float maxS = gearMax[gear];
+	float acc = gearAcc[gear];
+	if(boost && speed < maxS) speed += acc * dt * 0.35f;
+	else if(!boost) speed -= 4.5f * dt;
+	if(braking) speed -= 14.f * dt;
+	/* if over gear max, slow toward max */
+	if(speed > maxS) speed -= 8.f * dt;
+	if(speed < 0.f) speed = 0.f;
 
-	float grip = drift ? 0.5f : 1.f;
-	float steerTarget = stick * (2.4f / (0.5f + speed*0.14f + 0.01f));
-	yawRate += (steerTarget - yawRate)*8.f*dt*grip;
-	lane += yawRate * (0.4f + speed) * 0.22f * dt;
-	steerV += (stick*65.f - steerV)*0.3f;
-	if(lane<-2.1f){ lane=-2.1f; yawRate*=-0.3f; }
-	if(lane>2.1f){ lane=2.1f; yawRate*=-0.3f; }
+	/* drift: less grip, more lateral, slight speed loss */
+	float grip = drift ? 0.35f : 1.0f;
+	float steerTarget = stick * (2.6f / (0.5f + speed * 0.12f + 0.01f));
+	yawRate += (steerTarget - yawRate) * 9.f * dt * grip;
+	float lat = yawRate * (0.5f + speed) * 0.24f * dt;
+	if(drift) lat *= 1.8f;
+	lane += lat;
+	steerV += (stick * 70.f - steerV) * 0.3f;
+	if(drift) speed -= 1.5f * dt;
 
-	dist += speed*18.f*dt;
+	if(lane < -2.1f){ lane = -2.1f; yawRate *= -0.35f; }
+	if(lane >  2.1f){ lane =  2.1f; yawRate *= -0.35f; }
+
+	dist += speed * 18.f * dt;
 	timeL -= dt;
-	roadOff += speed*20.f*dt;
+	roadOff += speed * 20.f * dt;
 
-	static float timer=0; timer+=dt;
-	if(timer>0.9f){ spawnObs(); timer=0; }
+	static float timer = 0; timer += dt;
+	if(timer > 0.9f){ spawnObs(); timer = 0; }
 
 	for(int i=0;i<MAX_OBS;i++) if(obs[i].on){
-		obs[i].z -= (speed + obs[i].spd + 0.8f)*12.f*dt;
-		if(obs[i].z<12.f && obs[i].z>2.f && fabsf(obs[i].lane-lane)<0.85f){
-			crash++; crashStun=1.6f+crash*0.2f;
-			spinVel=(obs[i].lane>lane)?-3.2f:3.2f;
-			speed*=0.1f; yawRate=spinVel; obs[i].on=false; break;
+		obs[i].z -= (speed + obs[i].spd + 0.8f) * 12.f * dt;
+		if(obs[i].z < 12.f && obs[i].z > 2.f && fabsf(obs[i].lane - lane) < 0.85f){
+			crash++; crashStun = 1.6f + crash * 0.2f;
+			spinVel = (obs[i].lane > lane) ? -3.2f : 3.2f;
+			speed *= 0.1f; yawRate = spinVel; obs[i].on = false; break;
 		}
-		if(obs[i].z<1.5f) obs[i].on=false;
+		if(obs[i].z < 1.5f) obs[i].on = false;
 	}
-	if(dist>=target){
-		int r=(int)(220+level*90+fmaxf(0,timeL)*7-crash*50);
-		if(r<50)r=50; money+=r; score=r; state=ST_RESULT;
-	}else if(timeL<=0||crash>=8){
-		int r=15-crash*3; if(r<0)r=0; money+=r; score=r; state=ST_RESULT;
+	if(dist >= target){
+		int r = (int)(220 + level * 90 + fmaxf(0, timeL) * 7 - crash * 50);
+		if(r < 50) r = 50; money += r; score = r; state = ST_RESULT;
+	} else if(timeL <= 0 || crash >= 8){
+		int r = 15 - crash * 3; if(r < 0) r = 0; money += r; score = r; state = ST_RESULT;
 	}
-	if(d&KEY_START) state=ST_MENU;
+	if(d & KEY_START) state = ST_MENU;
 }
 
-/* ===== MENU 2D only ===== */
 static void drawMenu(){
 	C2D_TargetClear(top,C2D_Color32(15,18,40,255)); C2D_SceneBegin(top);
 	rect(0,0,TOP_W,90,C2D_Color32(190,28,38,255));
@@ -217,7 +262,6 @@ static void drawMenu(){
 	text(22,210,0.55f,C2D_Color32(255,230,70,255),buf);
 }
 
-/* ===== GARAGE pure 3D ===== */
 static void drawGarage(float dt){
 	circlePosition cp; hidCircleRead(&cp);
 	carAngle += dt*1.2f + (cp.dx/160.f)*dt*3.f;
@@ -236,71 +280,92 @@ static void drawGarage(float dt){
 	text(55,182,0.65f,C2D_Color32(255,255,255,255),"B  BACK");
 }
 
-/* ===== DRIVE PURE 3D - ZERO 2D on top ===== */
 static void drawDrive(){
-	/* sky clear only - then ONLY 3D meshes */
 	C3D_RenderTargetClear(top, C3D_CLEAR_ALL, C2D_Color32(100, 170, 230, 255), 0);
 	C3D_FrameDrawOn(top);
 
 	float scroll = fmodf(roadOff * 0.1f, 4.0f);
-
-	/* ROAD tiles - pure 3D */
 	if(groundOk){
 		for(int i = 0; i < 16; i++){
 			float z = -0.5f - (float)i * 3.5f + scroll;
 			drawMesh3D(&groundMesh, 0.f, -lane * 0.2f, -1.35f, z, 6.0f, 0.15f, 3.5f);
 		}
 	}
-
-	/* BUILDINGS left/right - pure 3D */
 	if(buildOk){
 		float bscroll = fmodf(roadOff * 0.07f, 5.0f);
 		for(int i = 0; i < 10; i++){
 			float z = -2.0f - (float)i * 5.0f + bscroll;
 			drawMesh3D(&buildMesh, 0.f, -4.0f - lane*0.1f, -0.5f, z, 2.2f, 2.5f, 2.2f);
-			drawMesh3D(&buildMesh, PI,   4.0f - lane*0.1f, -0.5f, z, 2.2f, 2.5f, 2.2f);
+			drawMesh3D(&buildMesh, PI,  4.0f - lane*0.1f, -0.5f, z, 2.2f, 2.5f, 2.2f);
 		}
 	}
 
-	/* TRAFFIC + PLAYER - pure 3D car models */
+	/* FIXED facing: traffic toward camera = 0, player hood = PI (look over rear toward road) */
 	if(meshOk){
 		for(int i = 0; i < MAX_OBS; i++) if(obs[i].on && obs[i].z < 70.f){
 			float rel = obs[i].lane - lane;
 			float wx = rel * 1.3f;
 			float wz = -2.0f - obs[i].z * 0.15f;
 			float sc = 0.28f + 0.4f / (1.f + obs[i].z * 0.04f);
-			drawMesh3D(&carMesh, PI, wx, -1.05f, wz, sc, sc, sc);
+			/* face toward player (oncoming) */
+			drawMesh3D(&carMesh, 0.f, wx, -1.05f, wz, sc, sc, sc);
 		}
-		float yaw = steerV * 0.02f;
+		float yaw = PI + steerV * 0.02f;
 		if(crashStun > 0.f) yaw += spinVel * 0.25f;
+		if(drift) yaw += stickSign() * 0.15f;
 		drawMesh3D(&carMesh, yaw, 0.f, -1.7f, -2.6f, 0.45f, 0.45f, 0.45f);
 	}
 
-	/* restore 2D only for BOTTOM hud */
 	C2D_Prepare();
-
 	C2D_TargetClear(bot, C2D_Color32(16,16,26,255));
 	C2D_SceneBegin(bot);
+
 	float p = dist/target; if(p>1)p=1;
-	rect(12,10,296,15,C2D_Color32(35,35,50,255));
-	rect(12,10,296*p,15,C2D_Color32(35,200,90,255));
+	rect(12,8,200,12,C2D_Color32(35,35,50,255));
+	rect(12,8,200*p,12,C2D_Color32(35,200,90,255));
 	float tp = timeL/(55.f+level*8.f); if(tp<0)tp=0; if(tp>1)tp=1;
-	rect(12,30,296,11,C2D_Color32(35,35,50,255));
-	rect(12,30,296*tp,11,C2D_Color32(230,175,35,255));
+	rect(12,24,200,10,C2D_Color32(35,35,50,255));
+	rect(12,24,200*tp,10,C2D_Color32(230,175,35,255));
+
 	char buf[64];
 	snprintf(buf,sizeof(buf),"SPD %.0f  DIST %.0f",speed*8.f,dist);
-	text(12,50,0.5f,C2D_Color32(255,255,255,255),buf);
+	text(12,42,0.48f,C2D_Color32(255,255,255,255),buf);
 	snprintf(buf,sizeof(buf),"TIME %.0f  $%d",timeL,money);
-	text(12,72,0.5f,C2D_Color32(255,255,255,255),buf);
-	if(crashStun>0.f) text(12,94,0.7f,C2D_Color32(255,35,35,255),"CRASH!");
-	else { snprintf(buf,sizeof(buf),"CRASH %d",crash); text(12,94,0.5f,C2D_Color32(255,130,130,255),buf); }
-	C2D_DrawCircleSolid(90,168,0.5f,50,C2D_Color32(35,35,48,255));
-	C2D_DrawCircleSolid(90,168,0.55f,13,C2D_Color32(200,35,35,255));
+	text(12,62,0.48f,C2D_Color32(255,255,255,255),buf);
+	if(crashStun>0.f) text(12,82,0.65f,C2D_Color32(255,35,35,255),"CRASH!");
+	else { snprintf(buf,sizeof(buf),"CRASH %d",crash); text(12,82,0.48f,C2D_Color32(255,130,130,255),buf); }
+	if(drift) text(120,82,0.5f,C2D_Color32(255,200,40,255),"DRIFT");
+
+	/* steering wheel */
+	C2D_DrawCircleSolid(70,175,0.5f,42,C2D_Color32(35,35,48,255));
+	C2D_DrawCircleSolid(70,175,0.55f,11,C2D_Color32(200,35,35,255));
 	float a=steerV*0.0174533f;
-	rect(90-30*cosf(a),168-30*sinf(a)-3,60,6,C2D_Color32(170,170,180,255));
-	rect(208,125,62,82,C2D_Color32(45,45,55,255));
-	rect(216,133,46,66,boost?C2D_Color32(230,45,45,255):C2D_Color32(85,28,28,255));
-	text(10,218,0.38f,C2D_Color32(190,190,200,255),"HOLD A=GAS  B=BRAKE  Y=DRIFT");
+	rect(70-26*cosf(a),175-26*sinf(a)-3,52,6,C2D_Color32(170,170,180,255));
+
+	/* gas pedal */
+	rect(155,140,48,70,C2D_Color32(45,45,55,255));
+	rect(160,146,38,58,boost?C2D_Color32(230,45,45,255):C2D_Color32(85,28,28,255));
+
+	/* ===== GEAR SHIFTER (touch drag) ===== */
+	rect(255,100,50,120,C2D_Color32(30,30,40,255));
+	rect(275,110,10,100,C2D_Color32(60,60,70,255)); /* rail */
+	for(int g=1;g<=6;g++){
+		float gy = gearYFromNum(g);
+		char gn[4]; snprintf(gn,sizeof(gn),"%d",g);
+		text(258, gy - 8, 0.4f, C2D_Color32(160,160,170,255), gn);
+	}
+	/* knob */
+	float ky = gearKnobY;
+	C2D_DrawCircleSolid(280, ky, 0.6f, 14, C2D_Color32(200,50,50,255));
+	char gbuf[8]; snprintf(gbuf,sizeof(gbuf),"G%d", gear);
+	text(258, 225, 0.55f, C2D_Color32(255,220,80,255), gbuf);
+
+	text(8,228,0.32f,C2D_Color32(180,180,190,255),"A GAS  B BRAKE  Y DRIFT  TOUCH=GEAR");
+}
+
+/* helper for drift yaw - need stick in draw? use steerV */
+static float stickSign(void){
+	return (steerV > 5.f) ? 1.f : (steerV < -5.f) ? -1.f : 0.f;
 }
 
 static void drawResult(){
