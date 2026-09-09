@@ -10,8 +10,9 @@
 
 #define TOP_W 400
 #define TOP_H 240
-#define MAX_OBS 10
+#define MAX_OBS 8
 #define NUM_CARS 6
+#define NUM_TRAFFIC 8
 #define PI 3.14159265f
 #define DEG2RAD (PI/180.f)
 #define MAX_STEER_DEG 25.f
@@ -36,6 +37,7 @@ static int gear = 1;
 static bool gearDrag = false;
 static float gearKnobY = 200.f;
 static float splashT = 0.f;
+static float roadCurve = 0.f; /* slight road bend for less boredom */
 
 static bool unlocked[NUM_CARS] = { true, false, false, false, false, false };
 static bool ownDrift = false;
@@ -53,6 +55,7 @@ static const char* carFeat[NUM_CARS] = {
 static const float gearMax[7] = { 0.f, 2.5f, 4.0f, 5.5f, 7.0f, 9.0f, 11.5f };
 static const float gearAcc[7] = { 0.f, 14.f, 11.f, 9.f, 7.5f, 6.f, 5.f };
 
+/* player selectable (van = Temu) */
 static const char* carFiles[] = {
 	"romfs:/cars/coupe.obj","romfs:/cars/van.obj","romfs:/cars/police.obj",
 	"romfs:/cars/jeep.obj","romfs:/cars/rally.obj","romfs:/cars/lamb.obj"
@@ -63,14 +66,37 @@ static float carColors[][3] = {
 	{0.2f,0.6f,0.2f},{0.9f,0.7f,0.1f},{0.9f,0.85f,0.1f}
 };
 
-struct Obs { float z, lane, spd; bool on; };
+/* traffic models - ALL except van (Temu) */
+static const char* trafficFiles[NUM_TRAFFIC] = {
+	"romfs:/cars/coupe.obj",
+	"romfs:/cars/police.obj",
+	"romfs:/cars/jeep.obj",
+	"romfs:/cars/rally.obj",
+	"romfs:/cars/lamb.obj",
+	"romfs:/cars/armor.obj",
+	"romfs:/cars/fenyr.obj",
+	"romfs:/cars/mobil.obj"
+};
+static float trafficColors[NUM_TRAFFIC][3] = {
+	{0.85f,0.15f,0.15f},{0.1f,0.1f,0.2f},{0.2f,0.55f,0.25f},{0.9f,0.7f,0.1f},
+	{0.9f,0.85f,0.15f},{0.4f,0.4f,0.45f},{0.7f,0.2f,0.2f},{0.15f,0.35f,0.7f}
+};
+
+struct Obs {
+	float z, lane, spd;
+	int meshId; /* index into trafficMeshes */
+	bool on;
+};
 static Obs obs[MAX_OBS];
 
 static DVLB_s* vshader_dvlb = NULL;
 static shaderProgram_s program;
 static int uLoc_projection = -1, uLoc_modelView = -1;
 static Mesh carMesh, groundMesh, buildMesh;
+static Mesh trafficMeshes[NUM_TRAFFIC];
+static bool trafficOk[NUM_TRAFFIC];
 static bool shaderOk = false, meshOk = false, groundOk = false, buildOk = false, shaderInited = false;
+static bool trafficLoaded = false;
 
 static ndspWaveBuf waveBuf;
 static s16* audioBuf = NULL;
@@ -175,6 +201,16 @@ static void loadCar(int idx){
 	if(!initShaderOnce()) return;
 	meshOk=meshLoadOBJ(carFiles[idx],&carMesh,carColors[idx][0],carColors[idx][1],carColors[idx][2]);
 }
+static void loadTrafficMeshes(void){
+	if(trafficLoaded) return;
+	if(!initShaderOnce()) return;
+	for(int i=0;i<NUM_TRAFFIC;i++){
+		memset(&trafficMeshes[i], 0, sizeof(Mesh));
+		trafficOk[i] = meshLoadOBJ(trafficFiles[i], &trafficMeshes[i],
+			trafficColors[i][0], trafficColors[i][1], trafficColors[i][2]);
+	}
+	trafficLoaded = true;
+}
 static void loadWorldMeshes(){
 	if(!initShaderOnce()) return;
 	meshFree(&groundMesh); meshFree(&buildMesh);
@@ -182,6 +218,7 @@ static void loadWorldMeshes(){
 	if(!groundOk) groundOk = meshLoadCube(&groundMesh, 0.3f, 0.3f, 0.35f);
 	buildOk = meshLoadOBJ("romfs:/city/low-detail-building-d.obj", &buildMesh, 0.7f, 0.45f, 0.35f);
 	if(!buildOk) buildOk = meshLoadCube(&buildMesh, 0.65f, 0.4f, 0.35f);
+	loadTrafficMeshes();
 }
 static void drawMesh3D(Mesh* m, float angleY, float px, float py, float pz, float sx, float sy, float sz){
 	if(!shaderOk || !m || !m->loaded) return;
@@ -206,7 +243,7 @@ static void drawMesh3D(Mesh* m, float angleY, float px, float py, float pz, floa
 }
 
 static void resetDrive(){
-	lane=0; speed=0.f; steerV=0; yawRate=0; rpm=0;
+	lane=0; speed=0.f; steerV=0; yawRate=0; rpm=0; roadCurve=0;
 	drift=boost=overRev=false; crashStun=0; spinVel=0;
 	gear=1; gearDrag=false; gearKnobY=200.f;
 	dist=0; crash=0; score=0; roadOff=0;
@@ -216,11 +253,14 @@ static void resetDrive(){
 static void spawnObs(){
 	int active=0;
 	for(int i=0;i<MAX_OBS;i++) if(obs[i].on) active++;
-	if(active >= 3) return;
+	if(active >= 4) return;
 	for(int i=0;i<MAX_OBS;i++) if(!obs[i].on){
-		obs[i].on=true; obs[i].z=55+(rand()%45);
+		obs[i].on=true;
+		obs[i].z=60+(rand()%50);
 		obs[i].lane=(float)((rand()%5)-2);
-		obs[i].spd=0.3f+(rand()%25)/100.f; break;
+		obs[i].spd=0.2f+(rand()%40)/100.f; /* relative to player on road */
+		obs[i].meshId = rand() % NUM_TRAFFIC;
+		break;
 	}
 }
 static float gearYFromNum(int g){ return 210.f - (float)(g - 1) * (100.f / 5.f); }
@@ -267,7 +307,11 @@ static void updateDrive(float dt){
 		if(lane<-2.2f){lane=-2.2f;spinVel=0;} if(lane>2.2f){lane=2.2f;spinVel=0;}
 		roadOff+=speed*5.f*dt; dist+=speed*3.f*dt; timeL-=dt;
 		updateEngineSound(speed, false, false);
-		for(int i=0;i<MAX_OBS;i++) if(obs[i].on){ obs[i].z-=3.f*dt; if(obs[i].z<1.f) obs[i].on=false; }
+		/* traffic stays locked to road scroll */
+		for(int i=0;i<MAX_OBS;i++) if(obs[i].on){
+			obs[i].z -= (speed + 0.5f) * 10.f * dt;
+			if(obs[i].z<1.f) obs[i].on=false;
+		}
 		if(timeL<=0||crash>=6){
 			int r=3-crash*2; if(r<0)r=0; money+=r; score=r; saveGame();
 			state = (money<=0) ? ST_GAMEOVER : ST_RESULT;
@@ -299,7 +343,6 @@ static void updateDrive(float dt){
 	if(speed > maxS * 1.05f) speed = maxS * 1.05f;
 	if(speed < 0.f) speed = 0.f;
 
-	/* steer where you point — car goes that direction */
 	float targetSteerDeg = stick * MAX_STEER_DEG;
 	steerV += (targetSteerDeg - steerV) * 12.f * dt;
 	if(steerV > MAX_STEER_DEG) steerV = MAX_STEER_DEG;
@@ -313,16 +356,24 @@ static void updateDrive(float dt){
 	if(lane < -2.1f) lane = -2.1f;
 	if(lane >  2.1f) lane =  2.1f;
 
+	/* gentle road curve so scenery shifts */
+	roadCurve = 0.35f * sinf(roadOff * 0.04f);
+
 	float distMul = (carSelect == 1) ? 1.15f : 1.0f;
 	dist += speed * 18.f * dt * distMul;
 	timeL -= dt; roadOff += speed * 20.f * dt;
 	updateEngineSound(speed, boost, overRev);
 
 	static float timer = 0; timer += dt;
-	if(timer > 2.8f){ spawnObs(); timer = 0; }
+	if(timer > 2.2f){ spawnObs(); timer = 0; }
 
+	/* enemies locked to road: approach at (playerSpeed - theirSpeed) */
 	for(int i=0;i<MAX_OBS;i++) if(obs[i].on){
-		obs[i].z -= (speed + obs[i].spd + 0.8f) * 12.f * dt;
+		obs[i].z -= (speed - obs[i].spd + 1.2f) * 11.f * dt;
+		/* slight lane sway so they feel alive on the road */
+		obs[i].lane += sinf(roadOff * 0.08f + i) * 0.15f * dt;
+		if(obs[i].lane < -2.f) obs[i].lane = -2.f;
+		if(obs[i].lane >  2.f) obs[i].lane =  2.f;
 		if(obs[i].z < 12.f && obs[i].z > 2.f && fabsf(obs[i].lane - lane) < 0.85f){
 			crash++; crashStun = 1.6f + crash * 0.2f;
 			spinVel = (obs[i].lane > lane) ? -3.2f : 3.2f;
@@ -334,7 +385,6 @@ static void updateDrive(float dt){
 		if(obs[i].z < 1.5f) obs[i].on = false;
 	}
 	if(dist >= target){
-		/* Temu wages: low pay */
 		int r = (int)(45 + level * 18 + fmaxf(0, timeL) * 1.5f - crash * 15);
 		if(carSelect == 1) r = (int)(r * 1.15f);
 		if(r < 12) r = 12; money += r; score = r; saveGame(); state = ST_RESULT;
@@ -399,7 +449,6 @@ static void drawGarage(float dt){
 static void drawShop(){
 	C2D_TargetClear(top,C2D_Color32(20,22,40,255)); C2D_SceneBegin(top);
 	text(120,40,0.9f,C2D_Color32(255,255,255,255),"SHOP");
-	text(40,100,0.5f,C2D_Color32(200,200,210,255),"Buy skills & upgrades");
 	C2D_TargetClear(bot,C2D_Color32(22,24,40,255)); C2D_SceneBegin(bot);
 	char buf[64];
 	if(ownDrift){
@@ -412,7 +461,6 @@ static void drawShop(){
 	}
 	snprintf(buf,sizeof(buf),"Money: $%d", money);
 	text(22,100,0.5f,C2D_Color32(255,230,70,255),buf);
-	text(22,140,0.4f,C2D_Color32(160,160,170,255),"Drift = hold Y while turning");
 	rect(22,185,276,40,C2D_Color32(120,35,45,255));
 	text(55,195,0.55f,C2D_Color32(255,255,255,255),"B  BACK");
 }
@@ -420,28 +468,34 @@ static void drawDrive(){
 	C3D_RenderTargetClear(top, C3D_CLEAR_ALL, C2D_Color32(100, 170, 230, 255), 0);
 	C3D_FrameDrawOn(top);
 	float scroll = fmodf(roadOff * 0.1f, 4.0f);
+	float curveX = roadCurve - lane * 0.15f;
 	if(groundOk){
 		for(int i = 0; i < 16; i++){
 			float z = -0.5f - (float)i * 3.5f + scroll;
-			drawMesh3D(&groundMesh, 0.f, -lane * 0.15f, -1.4f, z, 7.5f, 0.12f, 3.5f);
+			drawMesh3D(&groundMesh, 0.f, curveX, -1.4f, z, 7.5f, 0.12f, 3.5f);
 		}
 	}
 	if(buildOk){
 		float bscroll = fmodf(roadOff * 0.07f, 5.0f);
 		for(int i = 0; i < 10; i++){
 			float z = -2.0f - (float)i * 5.0f + bscroll;
-			drawMesh3D(&buildMesh, 0.f, -4.2f - lane*0.08f, -0.5f, z, 2.0f, 2.4f, 2.0f);
-			drawMesh3D(&buildMesh, PI,  4.2f - lane*0.08f, -0.5f, z, 2.0f, 2.4f, 2.0f);
+			drawMesh3D(&buildMesh, 0.f, -4.2f + curveX, -0.5f, z, 2.0f, 2.4f, 2.0f);
+			drawMesh3D(&buildMesh, PI,  4.2f + curveX, -0.5f, z, 2.0f, 2.4f, 2.0f);
 		}
 	}
+	/* traffic: real models, same road plane */
+	for(int i = 0; i < MAX_OBS; i++) if(obs[i].on && obs[i].z < 75.f){
+		int mid = obs[i].meshId;
+		if(mid < 0 || mid >= NUM_TRAFFIC) mid = 0;
+		Mesh* tm = (trafficOk[mid]) ? &trafficMeshes[mid] : (meshOk ? &carMesh : NULL);
+		if(!tm || !tm->loaded) continue;
+		float rel = obs[i].lane - lane;
+		float wx = rel * 1.3f + roadCurve * 0.5f;
+		float wz = -2.0f - obs[i].z * 0.15f;
+		float sc = 0.26f + 0.38f / (1.f + obs[i].z * 0.04f);
+		drawMesh3D(tm, 0.f, wx, -1.05f, wz, sc, sc, sc);
+	}
 	if(meshOk){
-		for(int i = 0; i < MAX_OBS; i++) if(obs[i].on && obs[i].z < 70.f){
-			float rel = obs[i].lane - lane;
-			float wx = rel * 1.3f;
-			float wz = -2.0f - obs[i].z * 0.15f;
-			float sc = 0.28f + 0.4f / (1.f + obs[i].z * 0.04f);
-			drawMesh3D(&carMesh, 0.f, wx, -1.05f, wz, sc, sc, sc);
-		}
 		float yaw = PI + (steerV * DEG2RAD);
 		if(crashStun > 0.f) yaw += spinVel * 0.2f;
 		if(drift) yaw += (steerV > 0 ? 0.12f : (steerV < 0 ? -0.12f : 0.f));
@@ -507,6 +561,8 @@ int main(int argc, char** argv){
 	memset(&carMesh,0,sizeof(carMesh));
 	memset(&groundMesh,0,sizeof(groundMesh));
 	memset(&buildMesh,0,sizeof(buildMesh));
+	memset(trafficMeshes,0,sizeof(trafficMeshes));
+	memset(trafficOk,0,sizeof(trafficOk));
 	gfxInitDefault();
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 	C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
@@ -571,6 +627,7 @@ int main(int argc, char** argv){
 	saveGame();
 	exitSound();
 	meshFree(&carMesh); meshFree(&groundMesh); meshFree(&buildMesh);
+	for(int i=0;i<NUM_TRAFFIC;i++) meshFree(&trafficMeshes[i]);
 	if(shaderOk){ shaderProgramFree(&program); if(vshader_dvlb) DVLB_Free(vshader_dvlb); }
 	if(font) C2D_FontFree(font);
 	C2D_TextBufDelete(sbuf); C2D_TextBufDelete(dbuf);
