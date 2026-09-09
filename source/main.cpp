@@ -23,7 +23,7 @@
 #define SAVE_PATH "sdmc:/TemuDriver3DS.sav"
 #define SAVE_MAGIC 0x54444D31u
 
-enum State { ST_SPLASH, ST_MENU, ST_GARAGE, ST_SHOP, ST_DRIVE, ST_RESULT, ST_GAMEOVER };
+enum State { ST_SPLASH, ST_MENU, ST_GARAGE, ST_SHOP, ST_DRIVE, ST_RESULT, ST_GAMEOVER, ST_ADMIN };
 
 static State state = ST_SPLASH;
 static C3D_RenderTarget *top, *bot;
@@ -55,6 +55,8 @@ static const char* radioLines[] = {
 	"RADIO: Clean drive = $","RADIO: Temu never sleeps"
 };
 static int radioIdx = 0;
+static u32 cheatSeq[] = { KEY_UP, KEY_UP, KEY_DOWN, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_LEFT, KEY_RIGHT };
+static int cheatPos = 0;
 
 static bool unlocked[NUM_CARS] = { true, false, false, false, false, false };
 static bool ownDrift = false;
@@ -142,8 +144,7 @@ static void text(float x,float y,float sc,u32 col,const char* str){
 	C2D_DrawText(&t,C2D_WithColor,x,y,0.9f,sc,sc,col);
 }
 static void initFont(){
-	cfguInit();
-	font=C2D_FontLoadSystem(CFG_REGION_EUR);
+	cfguInit(); font=C2D_FontLoadSystem(CFG_REGION_EUR);
 	if(!font) font=C2D_FontLoadSystem(CFG_REGION_USA);
 	if(!font) font=C2D_FontLoadSystem(CFG_REGION_JPN);
 	sbuf=C2D_TextBufNew(8192); dbuf=C2D_TextBufNew(8192);
@@ -291,7 +292,6 @@ static void updateDrive(float dt){
 	static int lastGear = 1;
 	if(gear > lastGear && rpm > 0.75f){ perfectShiftT = 1.0f; runBonus += 5; setMsg("PERFECT SHIFT!"); }
 	lastGear = gear; if(perfectShiftT > 0) perfectShiftT -= dt;
-
 	if(crashStun>0.f){
 		crashStun-=dt; speed*=(1.f-2.5f*dt); if(speed<0) speed=0;
 		lane+=spinVel*dt; spinVel*=(1.f-2.f*dt);
@@ -302,7 +302,6 @@ static void updateDrive(float dt){
 			state = (money<=0) ? ST_GAMEOVER : ST_RESULT; }
 		if(d&KEY_START){ saveGame(); state=ST_MENU; } return;
 	}
-
 	boost = (h & (KEY_A | KEY_R)) != 0;
 	drift = ownDrift && ((h & (KEY_Y | KEY_L)) != 0) && fabsf(stick) > 0.2f && speed > 2.0f;
 	bool braking = (h & KEY_B) != 0;
@@ -314,7 +313,6 @@ static void updateDrive(float dt){
 	float force = 0.f; if(boost) force += acc; force -= 2.0f + speed * 0.35f;
 	if(braking) force -= 16.f; if(drift) force -= 3.f;
 	speed += force * dt * 0.32f; if(speed > maxS * 1.05f) speed = maxS * 1.05f; if(speed < 0.f) speed = 0.f;
-
 	float targetSteerDeg = stick * MAX_STEER_DEG;
 	steerV += (targetSteerDeg - steerV) * 12.f * dt;
 	if(steerV > MAX_STEER_DEG) steerV = MAX_STEER_DEG; if(steerV < -MAX_STEER_DEG) steerV = -MAX_STEER_DEG;
@@ -322,12 +320,10 @@ static void updateDrive(float dt){
 	float move = stick * (0.55f + speed * 0.55f) * grip; if(drift) move *= 1.6f;
 	lane += move * dt; yawRate = stick * speed * 0.15f * grip;
 	if(lane < -2.1f) lane = -2.1f; if(lane > 2.1f) lane = 2.1f;
-
 	roadCurve = 0.35f * sinf(roadOff * 0.04f);
 	float distMul = (carSelect == 1) ? 1.15f : 1.0f;
 	dist += speed * 18.f * dt * distMul; timeL -= dt; roadOff += speed * 20.f * dt;
 	updateEngineSound(speed, boost, overRev);
-
 	static float timer = 0; timer += dt;
 	if(timer > 2.0f){
 		spawnObs(); if((rand()%3)==0) spawnPkg(); if((rand()%5)==0) spawnGate();
@@ -339,7 +335,6 @@ static void updateDrive(float dt){
 	if(d & KEY_SELECT){ hornT = 0.3f; setMsg("BEEP!"); } if(hornT > 0) hornT -= dt;
 	if(comboTimer > 0){ comboTimer -= dt; if(comboTimer <= 0) combo = 0; }
 	if(msgTimer > 0) msgTimer -= dt;
-
 	if(!policeChase && speed > 6.f && (rand()%1200)==0){ policeChase = true; policeSiren = 12.f; setMsg("POLICE!!!"); }
 	if(policeChase){
 		policeSiren -= dt;
@@ -351,7 +346,6 @@ static void updateDrive(float dt){
 	nightT = (timeL < 25.f) ? (25.f - timeL) / 25.f : 0.f;
 	radioT -= dt;
 	if(radioT <= 0.f){ setMsg(radioLines[radioIdx % 8]); radioIdx++; radioT = 9.f + (rand()%6); }
-
 	if(!rivalOn && dist > 400.f && (rand()%900)==0){
 		rivalOn = true; rivalZ = 40.f; rivalLane = lane + ((rand()%2)?1.f:-1.f); setMsg("RIVAL DRIVER!");
 	}
@@ -380,7 +374,6 @@ static void updateDrive(float dt){
 	if(dist > target*0.95f && tipsPaid==0 && timeL>15.f && crash==0){
 		tipsPaid=1; int tip=(int)(15*mult); money+=tip; runBonus+=tip; setMsg("CUSTOMER TIP!");
 	}
-
 	for(int i=0;i<MAX_OBS;i++) if(obs[i].on){
 		obs[i].z -= (speed - obs[i].spd + 1.2f) * 11.f * dt;
 		obs[i].lane += sinf(roadOff * 0.08f + i) * 0.15f * dt;
@@ -471,6 +464,21 @@ static void drawShop(){
 		text(30,42,0.55f, money>=DRIFT_PRICE?C2D_Color32(255,220,80,255):C2D_Color32(255,100,100,255), buf); }
 	snprintf(buf,sizeof(buf),"Money: $%d", money); text(22,100,0.5f,C2D_Color32(255,230,70,255),buf);
 	rect(22,185,276,40,C2D_Color32(120,35,45,255)); text(55,195,0.55f,C2D_Color32(255,255,255,255),"B  BACK");
+}
+static void drawAdmin(){
+	C2D_TargetClear(top, C2D_Color32(20, 0, 30, 255)); C2D_SceneBegin(top);
+	text(70, 30, 0.9f, C2D_Color32(255, 80, 255, 255), "ADMIN PANEL");
+	text(40, 80, 0.5f, C2D_Color32(200, 180, 255, 255), "Secret debug menu");
+	char buf[64]; snprintf(buf,sizeof(buf),"$%d  LV%d", money, level);
+	text(40, 120, 0.55f, C2D_Color32(255, 230, 100, 255), buf);
+	C2D_TargetClear(bot, C2D_Color32(25, 10, 35, 255)); C2D_SceneBegin(bot);
+	rect(16, 8, 288, 28, C2D_Color32(80, 30, 100, 255)); text(24, 12, 0.45f, C2D_Color32(255,255,255,255), "A  +$9999 money");
+	rect(16, 42, 288, 28, C2D_Color32(80, 30, 100, 255)); text(24, 46, 0.45f, C2D_Color32(255,255,255,255), "X  Unlock ALL cars");
+	rect(16, 76, 288, 28, C2D_Color32(80, 30, 100, 255)); text(24, 80, 0.45f, C2D_Color32(255,255,255,255), "Y  Unlock DRIFT");
+	rect(16, 110, 288, 28, C2D_Color32(80, 30, 100, 255)); text(24, 114, 0.45f, C2D_Color32(255,255,255,255), "R  Level +5");
+	rect(16, 144, 288, 28, C2D_Color32(80, 30, 100, 255)); text(24, 148, 0.45f, C2D_Color32(255,255,255,255), "L  God pack ($+drift+shield)");
+	rect(16, 178, 288, 28, C2D_Color32(100, 40, 40, 255)); text(24, 182, 0.45f, C2D_Color32(255,200,200,255), "SELECT  Wipe save");
+	rect(16, 208, 288, 28, C2D_Color32(40, 80, 40, 255)); text(24, 212, 0.45f, C2D_Color32(180,255,180,255), "B  Back to menu");
 }
 static void drawDrive(){
 	u32 skyCol;
@@ -579,7 +587,19 @@ int main(int argc, char** argv){
 		case ST_SPLASH: splashT += dt; drawSplash();
 			if(splashT > 2.2f || (k & (KEY_A|KEY_START))) state = ST_MENU; break;
 		case ST_MENU: drawMenu();
-			if(k&KEY_A){ if(!unlocked[carSelect]) carSelect = 0; loadCar(carSelect); loadWorldMeshes(); resetDrive(); state=ST_DRIVE; }
+			if((hidKeysHeld() & (KEY_L|KEY_R)) == (KEY_L|KEY_R) && (k & KEY_SELECT)){
+				cheatPos = 0; state = ST_ADMIN; break;
+			}
+			if(k & (KEY_UP|KEY_DOWN|KEY_LEFT|KEY_RIGHT)){
+				u32 need = cheatSeq[cheatPos];
+				if(k & need){ cheatPos++; }
+				else cheatPos = (k & cheatSeq[0]) ? 1 : 0;
+			}
+			if(cheatPos >= 8 && (k & KEY_A)){ cheatPos = 0; state = ST_ADMIN; break; }
+			if(k&KEY_A && cheatPos < 8){
+				if(!unlocked[carSelect]) carSelect = 0;
+				loadCar(carSelect); loadWorldMeshes(); resetDrive(); state=ST_DRIVE;
+			}
 			if(k&KEY_X){ loadCar(carSelect); carAngle=0; state=ST_GARAGE; }
 			if(k&KEY_Y) state=ST_SHOP; if(k&KEY_START){ saveGame(); run=false; } break;
 		case ST_GARAGE:
@@ -592,6 +612,18 @@ int main(int argc, char** argv){
 			if(k&(KEY_B|KEY_START)) state=ST_MENU; break;
 		case ST_DRIVE: updateDrive(dt); drawDrive(); break;
 		case ST_RESULT: drawResult(); if(k&KEY_A){ if(dist>=target) level++; saveGame(); state=ST_MENU; } break;
+		case ST_ADMIN: drawAdmin();
+			if(k&KEY_A){ money += 9999; if(money>999999) money=999999; saveGame(); }
+			if(k&KEY_X){ for(int i=0;i<NUM_CARS;i++) unlocked[i]=true; saveGame(); }
+			if(k&KEY_Y){ ownDrift=true; saveGame(); }
+			if(k&KEY_R){ level += 5; if(level>99) level=99; saveGame(); }
+			if(k&KEY_L){ money += 500; nitro=1.f; shieldHits=1; ownDrift=true; saveGame(); }
+			if(k&KEY_SELECT){
+				money=350; level=1; carSelect=0; ownDrift=false;
+				for(int i=0;i<NUM_CARS;i++) unlocked[i]=(i==0); saveGame();
+			}
+			if(k&(KEY_B|KEY_START)){ saveGame(); state=ST_MENU; }
+			break;
 		case ST_GAMEOVER: drawGameOver(); if(k&KEY_A){ money = 200; crash=0; level=1; saveGame(); state=ST_MENU; } break;
 		}
 		C3D_FrameEnd(0);
