@@ -1,4 +1,5 @@
 # TemuDriver3DS
+# Supported by AUSP Anti-Cheat-System
 
 **Be a Temu Driver!** Deliver packages, upgrade your car, drift through traffic and earn money on your Nintendo 3DS.
 
