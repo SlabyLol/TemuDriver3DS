@@ -12,9 +12,9 @@ include $(DEVKITARM)/3ds_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	TemuDriver3DS
 BUILD		:=	build
-SOURCES		:=	source
+SOURCES		:=	source AUSP
 DATA		:=	data
-INCLUDES	:=	include
+INCLUDES	:=	include AUSP
 GRAPHICS	:=	gfx
 GFXBUILD	:=	$(BUILD)
 ROMFS		:=	romfs
@@ -158,8 +158,7 @@ $(OUTPUT).elf	:	$(OFILES)
 %.t3x.o	%_t3x.h :	%.t3x
 	@echo $(notdir $<)
 	@$(bin2o)
-
-define shader-as
+	define shader-as
 	$(eval CURBIN := $*.shbin)
 	$(eval DEPSFILE := $(DEPSDIR)/$*.shbin.d)
 	echo "$(CURBIN).o: $(CURBIN) $1" > $(DEPSFILE)
