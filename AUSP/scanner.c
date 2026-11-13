@@ -57,6 +57,9 @@ int ausp_scan_process(void)
     AuspMemRegion regions[AUSP_MAX_REGIONS];
     int n = collect_regions(regions, AUSP_MAX_REGIONS);
 
+    int found_cheat = 0;
+    int found_nimbus = 0;
+
     for (int i = 0; i < n; i++) {
         const u8 *base = (const u8 *)regions[i].base;
         u32 size = regions[i].size;
@@ -66,10 +69,16 @@ int ausp_scan_process(void)
                                 ausp_signatures[s].data,
                                 ausp_signatures[s].length))
             {
-                return 1;
+                if (ausp_signatures[s].is_nimbus)
+                    found_nimbus = 1;
+                else
+                    found_cheat = 1;
             }
         }
     }
 
-    return 0;
+    if (AUSP_IGNORE_NIMBUS && found_nimbus && !found_cheat)
+        return 0;
+
+    return found_cheat;
 }
