@@ -3,7 +3,7 @@
 
 #define AUSP_VERSION_MAJOR      1
 #define AUSP_VERSION_MINOR      4
-#define AUSP_VERSION_PATCH      2
+#define AUSP_VERSION_PATCH      3
 
 #define AUSP_REACTION_SCREEN    1
 #define AUSP_REACTION_ACTION    2

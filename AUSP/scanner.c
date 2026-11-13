@@ -1,4 +1,5 @@
 #include "scanner.h"
+#include "signatures.h"
 #include "config.h"
 #include <string.h>
 #include <stdbool.h>
