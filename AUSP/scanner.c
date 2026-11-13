@@ -1,10 +1,12 @@
 #include "scanner.h"
 #include "config.h"
 #include <string.h>
+#include <stdbool.h>
 
 static bool region_contains(const u8 *base, u32 size, const u8 *sig, u32 siglen)
 {
-    if (!base || size < siglen || !sig || siglen == 0) return false;
+    if (!base || size < siglen || !sig || siglen == 0)
+        return false;
 
     const u8 *end = base + size - siglen;
     for (const u8 *p = base; p <= end; p++) {
@@ -23,8 +25,10 @@ static int collect_regions(AuspMemRegion *out, int max)
 
     while (count < max && addr < 0x40000000) {
         Result res = svcQueryMemory(&info, &page, addr);
-        if (R_FAILED(res)) break;
-        if (info.size == 0) break;
+        if (R_FAILED(res))
+            break;
+        if (info.size == 0)
+            break;
 
         bool interesting = false;
 
@@ -45,7 +49,8 @@ static int collect_regions(AuspMemRegion *out, int max)
         }
 
         u32 next = info.base_addr + info.size;
-        if (next <= addr) break;
+        if (next <= addr)
+            break;
         addr = next;
     }
 
@@ -61,7 +66,7 @@ int ausp_scan_process(void)
     int found_nimbus = 0;
 
     for (int i = 0; i < n; i++) {
-        const u8 *base = (const u8 *)regions[i].base;
+        const u8 *base = (const u8 *)(uintptr_t)regions[i].base;
         u32 size = regions[i].size;
 
         for (u32 s = 0; s < AUSP_SIGNATURE_COUNT; s++) {

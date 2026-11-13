@@ -6,14 +6,16 @@
 static void draw_logo(float cx, float cy, float scale)
 {
     float s = scale;
+    u32 accent = C2D_Color32(AUSP_SPLASH_ACCENT_R, AUSP_SPLASH_ACCENT_G, AUSP_SPLASH_ACCENT_B, AUSP_SPLASH_ACCENT_A);
+    u32 bg     = C2D_Color32(AUSP_SPLASH_BG_R, AUSP_SPLASH_BG_G, AUSP_SPLASH_BG_B, AUSP_SPLASH_BG_A);
 
-    C2D_DrawRectSolid(cx - 55*s, cy - 45*s, 0.4f, 110*s, 90*s, AUSP_SPLASH_ACCENT);
-    C2D_DrawRectSolid(cx - 48*s, cy - 38*s, 0.5f, 96*s, 76*s, AUSP_SPLASH_BG);
+    C2D_DrawRectSolid(cx - 55*s, cy - 45*s, 0.4f, 110*s, 90*s, accent);
+    C2D_DrawRectSolid(cx - 48*s, cy - 38*s, 0.5f, 96*s, 76*s, bg);
 
-    C2D_DrawCircleSolid(cx, cy - 5*s, 0.6f, 28*s, AUSP_SPLASH_ACCENT);
-    C2D_DrawCircleSolid(cx, cy - 5*s, 0.7f, 18*s, AUSP_SPLASH_BG);
+    C2D_DrawCircleSolid(cx, cy - 5*s, 0.6f, 28*s, accent);
+    C2D_DrawCircleSolid(cx, cy - 5*s, 0.7f, 18*s, bg);
 
-    C2D_DrawRectSolid(cx - 8*s, cy + 18*s, 0.6f, 16*s, 22*s, AUSP_SPLASH_ACCENT);
+    C2D_DrawRectSolid(cx - 8*s, cy + 18*s, 0.6f, 16*s, 22*s, accent);
 }
 
 void ausp_show_splash(void)
@@ -40,6 +42,11 @@ void ausp_show_splash(void)
     C2D_TextParse(&txtSupported, buf, "Supported by AUSP-3DS");
     C2D_TextOptimize(&txtSupported);
 
+    u32 colBg     = C2D_Color32(AUSP_SPLASH_BG_R, AUSP_SPLASH_BG_G, AUSP_SPLASH_BG_B, AUSP_SPLASH_BG_A);
+    u32 colText   = C2D_Color32(AUSP_SPLASH_TEXT_R, AUSP_SPLASH_TEXT_G, AUSP_SPLASH_TEXT_B, AUSP_SPLASH_TEXT_A);
+    u32 colSub    = C2D_Color32(AUSP_SPLASH_SUB_R, AUSP_SPLASH_SUB_G, AUSP_SPLASH_SUB_B, AUSP_SPLASH_SUB_A);
+    u32 colAccent = C2D_Color32(AUSP_SPLASH_ACCENT_R, AUSP_SPLASH_ACCENT_G, AUSP_SPLASH_ACCENT_B, AUSP_SPLASH_ACCENT_A);
+
     int frames = 0;
     while (aptMainLoop() && frames < AUSP_SPLASH_DURATION)
     {
@@ -48,19 +55,19 @@ void ausp_show_splash(void)
             break;
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
-        C2D_TargetClear(top, AUSP_SPLASH_BG);
+        C2D_TargetClear(top, colBg);
         C2D_SceneBegin(top);
 
         draw_logo(200.0f, 95.0f, 1.15f);
 
         C2D_DrawText(&txtTitle, C2D_AlignCenter | C2D_WithColor,
-                     200.0f, 155.0f, 0.5f, 0.85f, 0.85f, AUSP_SPLASH_TEXT);
+                     200.0f, 155.0f, 0.5f, 0.85f, 0.85f, colText);
 
         C2D_DrawText(&txtSub, C2D_AlignCenter | C2D_WithColor,
-                     200.0f, 185.0f, 0.5f, 0.55f, 0.55f, AUSP_SPLASH_SUB);
+                     200.0f, 185.0f, 0.5f, 0.55f, 0.55f, colSub);
 
         C2D_DrawText(&txtSupported, C2D_AlignCenter | C2D_WithColor,
-                     200.0f, 215.0f, 0.5f, 0.50f, 0.50f, AUSP_SPLASH_ACCENT);
+                     200.0f, 215.0f, 0.5f, 0.50f, 0.50f, colAccent);
 
         C3D_FrameEnd(0);
         frames++;

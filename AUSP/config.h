@@ -3,7 +3,7 @@
 
 #define AUSP_VERSION_MAJOR      1
 #define AUSP_VERSION_MINOR      4
-#define AUSP_VERSION_PATCH      0
+#define AUSP_VERSION_PATCH      2
 
 #define AUSP_REACTION_SCREEN    1
 #define AUSP_REACTION_ACTION    2
@@ -34,10 +34,25 @@
 #define AUSP_SPLASH_ENABLE      1
 #define AUSP_SPLASH_DURATION    90
 
-#define AUSP_SPLASH_BG          C2D_Color32(12, 14, 28, 255)
-#define AUSP_SPLASH_ACCENT      C2D_Color32(255, 80, 40, 255)
-#define AUSP_SPLASH_TEXT        C2D_Color32(240, 245, 255, 255)
-#define AUSP_SPLASH_SUB         C2D_Color32(200, 160, 140, 255)
+#define AUSP_SPLASH_BG_R        12
+#define AUSP_SPLASH_BG_G        14
+#define AUSP_SPLASH_BG_B        28
+#define AUSP_SPLASH_BG_A        255
+
+#define AUSP_SPLASH_ACCENT_R    255
+#define AUSP_SPLASH_ACCENT_G    80
+#define AUSP_SPLASH_ACCENT_B    40
+#define AUSP_SPLASH_ACCENT_A    255
+
+#define AUSP_SPLASH_TEXT_R      240
+#define AUSP_SPLASH_TEXT_G      245
+#define AUSP_SPLASH_TEXT_B      255
+#define AUSP_SPLASH_TEXT_A      255
+
+#define AUSP_SPLASH_SUB_R       200
+#define AUSP_SPLASH_SUB_G       160
+#define AUSP_SPLASH_SUB_B       140
+#define AUSP_SPLASH_SUB_A       255
 
 #define AUSP_IGNORE_NIMBUS      1
 
