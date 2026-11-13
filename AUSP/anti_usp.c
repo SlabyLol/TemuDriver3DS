@@ -2,6 +2,7 @@
 #include "config.h"
 #include "scanner.h"
 #include "screen.h"
+#include "splash.h"
 #include <stdio.h>
 
 static AuspActionFn g_action = NULL;
@@ -25,6 +26,8 @@ void anti_usp_show_screen(void)
 
 void anti_usp_run(void)
 {
+    ausp_show_splash();
+
     if (anti_usp_check() != AUSP_PLUGIN_FOUND)
         return;
 
