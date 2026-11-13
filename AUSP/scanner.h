@@ -2,7 +2,6 @@
 #define AUSP_SCANNER_H
 
 #include <3ds.h>
-#include "signatures.h"
 
 typedef struct {
     u32 base;
